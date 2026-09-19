@@ -1,0 +1,484 @@
+--[[
+* XIUI Button Library
+* Reusable button component with hover states and image overlay support
+*
+* Usage:
+*   local button = require('libs.button');
+*
+*   -- Simple button with callback
+*   if button.Draw('myButton', x, y, width, height, options) then
+*       -- Button was clicked
+*   end
+*
+*   -- Button with image
+*   button.Draw('arrowBtn', x, y, 24, 24, {
+*       image = arrowTexture,
+*       imageSize = {16, 16},
+*       colors = { normal = 0xFF333333, hovered = 0xFF444444, pressed = 0xFF222222 },
+*   });
+*
+* Options:
+*   colors = { normal, hovered, pressed, border }  -- ARGB colors
+*   rounding = number                               -- Corner rounding (default 4)
+*   borderThickness = number                        -- Border thickness (default 1)
+*   image = texture pointer or number               -- Image to draw on button
+*   imageSize = {width, height}                     -- Image dimensions (defaults to button size)
+*   imageOffset = {x, y}                            -- Image offset from button top-left
+*   imageColor = ARGB                               -- Image tint color (default white)
+*   tooltip = string                                -- Tooltip text on hover
+*   disabled = boolean                              -- Disable interaction
+*   drawList = ImGui draw list                      -- Custom draw list (default: background)
+]]--
+
+require('common');
+local imgui = require('imgui');
+local ffi = require('ffi');
+
+local M = {};
+
+-- Forward decls (used by *Prim aliases before non-Prim definitions appear below).
+local DrawImpl, DrawArrowImpl, ARGBToU32Local;
+
+-- ============================================
+-- API aliases (formerly primitive-based; now route through ImGui draw list)
+-- ============================================
+
+function M.DrawPrim(id, x, y, width, height, options)
+    return DrawImpl(id, x, y, width, height, options);
+end
+
+function M.DrawArrowPrim(id, x, y, size, direction, options, drawList)
+    options = options or {};
+    if drawList ~= nil then
+        -- old-style 7th-arg drawList: pipe through options for DrawArrow
+        options.drawList = drawList;
+    end
+    return DrawArrowImpl(id, x, y, size, direction, options);
+end
+
+-- No-ops kept for callsites that haven't been cleaned up yet (no persistent primitives to manage).
+function M.HidePrim(id) end
+function M.DestroyPrim(id) end
+function M.DestroyAllPrims() end
+
+-- ============================================
+-- Default Colors
+-- ============================================
+
+M.DEFAULT_COLORS = {
+    normal = 0xCC333333,
+    hovered = 0xDD4a4a4a,
+    pressed = 0xDD222222,
+    border = 0xFF1a1a1a,
+    disabled = 0x88222222,
+};
+
+-- ============================================
+-- Preset Color Schemes
+-- ============================================
+
+-- Neutral/default button
+M.COLORS_NEUTRAL = {
+    normal = 0xCC333333,
+    hovered = 0xDD4a4a4a,
+    pressed = 0xDD222222,
+    border = 0xFF1a1a1a,
+};
+
+-- Positive button (lot, confirm, accept, yes)
+M.COLORS_POSITIVE = {
+    normal = 0xCC2d5a2d,
+    hovered = 0xDD3d7a3d,
+    pressed = 0xDD1d4a1d,
+    border = 0xFF1a331a,
+};
+
+-- Negative button (pass, cancel, decline, no)
+M.COLORS_NEGATIVE = {
+    normal = 0xCC5a2d2d,
+    hovered = 0xDD7a3d3d,
+    pressed = 0xDD4a1d1d,
+    border = 0xFF331a1a,
+};
+
+-- Info button (toggle, info, neutral action)
+M.COLORS_INFO = {
+    normal = 0xCC2d3d5a,
+    hovered = 0xDD3d4d7a,
+    pressed = 0xDD1d2d4a,
+    border = 0xFF1a1a33,
+};
+
+-- Special button (highlight, important)
+M.COLORS_SPECIAL = {
+    normal = 0xCC5a4a2d,
+    hovered = 0xDD7a6a3d,
+    pressed = 0xDD4a3a1d,
+    border = 0xFF33291a,
+};
+
+-- ============================================
+-- Arrow Color Presets
+-- ============================================
+
+M.ARROW_COLORS = {
+    normal = 0xFFAAAAAA,
+    hovered = 0xFFFFFFFF,
+};
+
+M.ARROW_COLORS_POSITIVE = {
+    normal = 0xFF88CC88,
+    hovered = 0xFFAAFFAA,
+};
+
+M.ARROW_COLORS_NEGATIVE = {
+    normal = 0xFFCC8888,
+    hovered = 0xFFFFAAAA,
+};
+
+-- ============================================
+-- Helper Functions
+-- ============================================
+
+-- Convert ARGB hex to ImGui U32
+local function ARGBToU32(argb)
+    if type(argb) == 'table' then
+        -- Already a table {r, g, b, a}
+        return imgui.GetColorU32(argb);
+    end
+    -- ARGB hex to ABGR (ImGui format)
+    local a = bit.rshift(bit.band(argb, 0xFF000000), 24);
+    local r = bit.rshift(bit.band(argb, 0x00FF0000), 16);
+    local g = bit.rshift(bit.band(argb, 0x0000FF00), 8);
+    local b = bit.band(argb, 0x000000FF);
+    return imgui.GetColorU32({r / 255, g / 255, b / 255, a / 255});
+end
+
+-- Get texture pointer as number for ImGui
+local function GetTexturePtr(texture)
+    if texture == nil then
+        return nil;
+    end
+    if type(texture) == 'number' then
+        return texture;
+    end
+    if type(texture) == 'table' and texture.image then
+        return tonumber(ffi.cast("uint32_t", texture.image));
+    end
+    if type(texture) == 'cdata' then
+        return tonumber(ffi.cast("uint32_t", texture));
+    end
+    return nil;
+end
+
+-- ============================================
+-- Button Drawing
+-- ============================================
+
+--[[
+    Draw a button with hover states and optional image overlay
+
+    @param id string: Unique button identifier (used for ImGui)
+    @param x number: X position (screen coordinates)
+    @param y number: Y position (screen coordinates)
+    @param width number: Button width
+    @param height number: Button height
+    @param options table: Optional settings (see module header)
+    @return boolean: True if button was clicked
+    @return boolean: True if button is hovered
+]]--
+function DrawImpl(id, x, y, width, height, options)
+    options = options or {};
+
+    local colors = options.colors or M.DEFAULT_COLORS;
+    local rounding = options.rounding or 4;
+    local borderThickness = options.borderThickness or 1;
+    local disabled = options.disabled or false;
+
+    -- Get draw list
+    local drawList = options.drawList or GetUIDrawList();
+
+    -- Set cursor position for invisible button
+    imgui.SetCursorScreenPos({x, y});
+
+    -- Create invisible button for interaction
+    local clicked = false;
+    local hovered = false;
+    local held = false;
+
+    if not disabled then
+        imgui.InvisibleButton(id, {width, height});
+        clicked = imgui.IsItemClicked();
+        hovered = imgui.IsItemHovered();
+        held = imgui.IsItemActive();
+    else
+        -- Still need to reserve space even when disabled
+        imgui.Dummy({width, height});
+    end
+
+    -- Determine current color based on state
+    local bgColor;
+    if disabled then
+        bgColor = colors.disabled or M.DEFAULT_COLORS.disabled;
+    elseif held then
+        bgColor = colors.pressed or colors.hovered or M.DEFAULT_COLORS.pressed;
+    elseif hovered then
+        bgColor = colors.hovered or M.DEFAULT_COLORS.hovered;
+    else
+        bgColor = colors.normal or M.DEFAULT_COLORS.normal;
+    end
+
+    local borderColor = colors.border or M.DEFAULT_COLORS.border;
+
+    -- Convert to ImGui U32
+    local bgColorU32 = ARGBToU32(bgColor);
+    local borderColorU32 = ARGBToU32(borderColor);
+
+    -- Draw button background
+    drawList:AddRectFilled({x, y}, {x + width, y + height}, bgColorU32, rounding);
+
+    -- Draw border if thickness > 0
+    if borderThickness > 0 then
+        drawList:AddRect({x, y}, {x + width, y + height}, borderColorU32, rounding, nil, borderThickness);
+    end
+
+    -- Draw image if provided
+    local image = options.image;
+    local imagePtr = GetTexturePtr(image);
+
+    if imagePtr then
+        local imageSize = options.imageSize or {width, height};
+        local imageOffset = options.imageOffset or {0, 0};
+        local imageColor = options.imageColor or 0xFFFFFFFF;
+
+        -- Center image if smaller than button
+        local imgX = x + imageOffset[1] + (width - imageSize[1]) / 2;
+        local imgY = y + imageOffset[2] + (height - imageSize[2]) / 2;
+
+        local imageColorU32 = ARGBToU32(imageColor);
+
+        drawList:AddImage(
+            imagePtr,
+            {imgX, imgY},
+            {imgX + imageSize[1], imgY + imageSize[2]},
+            {0, 0}, {1, 1},
+            imageColorU32
+        );
+    end
+
+    -- Show tooltip if provided and hovered
+    if hovered and options.tooltip then
+        imgui.SetTooltip(options.tooltip);
+    end
+
+    return clicked, hovered;
+end
+
+--[[
+    Draw a button that renders an arrow icon (up, down, left, right)
+
+    @param id string: Unique button identifier
+    @param x number: X position
+    @param y number: Y position
+    @param size number: Button size (square)
+    @param direction string: 'up', 'down', 'left', 'right'
+    @param options table: Button options (same as Draw)
+    @return boolean: True if clicked
+    @return boolean: True if hovered
+]]--
+function DrawArrowImpl(id, x, y, size, direction, options)
+    options = options or {};
+
+    local colors = options.colors or M.DEFAULT_COLORS;
+    local rounding = options.rounding or 4;
+    local borderThickness = options.borderThickness or 1;
+    local disabled = options.disabled or false;
+
+    -- Arrow colors can be passed as a table or individual values
+    local arrowColors = options.arrowColors or M.ARROW_COLORS;
+    local arrowColor = options.arrowColor or arrowColors.normal or 0xFFCCCCCC;
+    local arrowHoverColor = options.arrowHoverColor or arrowColors.hovered or 0xFFFFFFFF;
+
+    -- Get draw list
+    local drawList = options.drawList or GetUIDrawList();
+
+    -- Set cursor position for invisible button
+    imgui.SetCursorScreenPos({x, y});
+
+    -- Create invisible button for interaction
+    local clicked = false;
+    local hovered = false;
+    local held = false;
+
+    if not disabled then
+        imgui.InvisibleButton(id, {size, size});
+        clicked = imgui.IsItemClicked();
+        hovered = imgui.IsItemHovered();
+        held = imgui.IsItemActive();
+    else
+        imgui.Dummy({size, size});
+    end
+
+    -- Determine current color based on state
+    local bgColor;
+    if disabled then
+        bgColor = colors.disabled or M.DEFAULT_COLORS.disabled;
+    elseif held then
+        bgColor = colors.pressed or colors.hovered or M.DEFAULT_COLORS.pressed;
+    elseif hovered then
+        bgColor = colors.hovered or M.DEFAULT_COLORS.hovered;
+    else
+        bgColor = colors.normal or M.DEFAULT_COLORS.normal;
+    end
+
+    local borderColor = colors.border or M.DEFAULT_COLORS.border;
+
+    -- Convert to ImGui U32
+    local bgColorU32 = ARGBToU32(bgColor);
+    local borderColorU32 = ARGBToU32(borderColor);
+
+    -- Draw button background
+    drawList:AddRectFilled({x, y}, {x + size, y + size}, bgColorU32, rounding);
+
+    -- Draw border
+    if borderThickness > 0 then
+        drawList:AddRect({x, y}, {x + size, y + size}, borderColorU32, rounding, nil, borderThickness);
+    end
+
+    -- Draw arrow triangle
+    local currentArrowColor = (hovered or held) and arrowHoverColor or arrowColor;
+    local arrowColorU32 = ARGBToU32(currentArrowColor);
+
+    -- Calculate arrow points based on direction
+    local centerX = x + size / 2;
+    local centerY = y + size / 2;
+    local arrowSize = size * 0.35;  -- Arrow size relative to button
+
+    local p1, p2, p3;
+
+    if direction == 'up' then
+        p1 = {centerX, centerY - arrowSize};              -- Top point
+        p2 = {centerX - arrowSize, centerY + arrowSize * 0.6};  -- Bottom left
+        p3 = {centerX + arrowSize, centerY + arrowSize * 0.6};  -- Bottom right
+    elseif direction == 'down' then
+        p1 = {centerX, centerY + arrowSize};              -- Bottom point
+        p2 = {centerX - arrowSize, centerY - arrowSize * 0.6};  -- Top left
+        p3 = {centerX + arrowSize, centerY - arrowSize * 0.6};  -- Top right
+    elseif direction == 'left' then
+        p1 = {centerX - arrowSize, centerY};              -- Left point
+        p2 = {centerX + arrowSize * 0.6, centerY - arrowSize};  -- Top right
+        p3 = {centerX + arrowSize * 0.6, centerY + arrowSize};  -- Bottom right
+    elseif direction == 'right' then
+        p1 = {centerX + arrowSize, centerY};              -- Right point
+        p2 = {centerX - arrowSize * 0.6, centerY - arrowSize};  -- Top left
+        p3 = {centerX - arrowSize * 0.6, centerY + arrowSize};  -- Bottom left
+    end
+
+    if p1 and p2 and p3 then
+        drawList:AddTriangleFilled(p1, p2, p3, arrowColorU32);
+    end
+
+    -- Show tooltip if provided
+    if hovered and options.tooltip then
+        imgui.SetTooltip(options.tooltip);
+    end
+
+    return clicked, hovered;
+end
+
+
+
+--[[
+    Draw a minimize/maximize button (renders bg + icon via drawList)
+
+    @param id string: Unique button identifier
+    @param x number: X position
+    @param y number: Y position
+    @param size number: Button size (square)
+    @param isMinimized boolean: True shows maximize icon (□), false shows minimize icon (_)
+    @param options table: Button options
+    @param drawList: ImGui draw list for icon rendering (default: foreground)
+    @return boolean: True if clicked
+    @return boolean: True if hovered
+]]--
+function M.DrawMinimize(id, x, y, size, isMinimized, options, drawList)
+    options = options or {};
+
+    local colors = options.colors or M.DEFAULT_COLORS;
+    local disabled = options.disabled or false;
+
+    local iconColors = options.iconColors or M.ARROW_COLORS;
+    local iconColor = options.iconColor or iconColors.normal or 0xFFCCCCCC;
+    local iconHoverColor = options.iconHoverColor or iconColors.hovered or 0xFFFFFFFF;
+
+    imgui.SetCursorScreenPos({x, y});
+
+    local clicked = false;
+    local hovered = false;
+    local held = false;
+
+    if not disabled then
+        imgui.InvisibleButton(id, {size, size});
+        clicked = imgui.IsItemClicked();
+        hovered = imgui.IsItemHovered();
+        held = imgui.IsItemActive();
+    else
+        imgui.Dummy({size, size});
+    end
+
+    local bgColor;
+    if disabled then
+        bgColor = colors.disabled or M.DEFAULT_COLORS.disabled;
+    elseif held then
+        bgColor = colors.pressed or colors.hovered or M.DEFAULT_COLORS.pressed;
+    elseif hovered then
+        bgColor = colors.hovered or M.DEFAULT_COLORS.hovered;
+    else
+        bgColor = colors.normal or M.DEFAULT_COLORS.normal;
+    end
+
+    drawList = drawList or GetUIDrawList();
+
+    -- Background
+    drawList:AddRectFilled({x, y}, {x + size, y + size}, ARGBToU32(bgColor));
+
+    -- Icon on top
+    local currentIconColor = (hovered or held) and iconHoverColor or iconColor;
+    local iconColorU32 = ARGBToU32(currentIconColor);
+
+    local centerX = x + size / 2;
+    local centerY = y + size / 2;
+    local iconSize = size * 0.4;
+    local lineThickness = math.max(2, size * 0.1);
+
+    if isMinimized then
+        -- Maximize icon: small square (□)
+        local halfSize = iconSize * 0.5;
+        drawList:AddRect(
+            {centerX - halfSize, centerY - halfSize},
+            {centerX + halfSize, centerY + halfSize},
+            iconColorU32, 0, nil, lineThickness
+        );
+    else
+        -- Minimize icon: horizontal line at bottom (_)
+        local halfWidth = iconSize * 0.6;
+        local lineY = centerY + iconSize * 0.3;
+        drawList:AddLine(
+            {centerX - halfWidth, lineY},
+            {centerX + halfWidth, lineY},
+            iconColorU32, lineThickness
+        );
+    end
+
+    if hovered and options.tooltip then
+        imgui.SetTooltip(options.tooltip);
+    end
+
+    return clicked, hovered;
+end
+
+M.Draw = DrawImpl;
+M.DrawArrow = DrawArrowImpl;
+M.DrawMinimizePrim = M.DrawMinimize;
+
+return M;

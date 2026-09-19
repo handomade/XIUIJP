@@ -1,0 +1,158 @@
+--[[
+* XIUI UI Module Registry
+* Data-driven module management for initialization, rendering, cleanup, and visibility
+]]--
+
+local chat = require('chat');
+local gameState = require('core.gamestate');
+
+local M = {};
+
+-- Module registry - defines all UI modules and their configuration
+-- Each entry contains:
+--   module: the required module
+--   settingsKey: key in gAdjustedSettings for this module's settings
+--   configKey: key in gConfig for visibility (optional)
+--   hideOnEventKey: config key for hiding during events (optional)
+--   hideOnMenuFocusKey: config key for hiding when game menu is open (optional)
+--   hideMacroPaletteKey: config key to keep module visible when macro palette is open (optional)
+--   hideOnlyAllianceOnMenuFocusKey: config key to hide only alliance parties on menu open (optional)
+--   hasSetHidden: whether module has SetHidden function
+local registry = {};
+
+-- Rate-limited per-module error tracking
+local moduleErrorTimes = {};
+local MODULE_ERROR_INTERVAL = 60;
+
+function M.Register(name, config)
+    registry[name] = config;
+end
+
+function M.Get(name)
+    return registry[name];
+end
+
+function M.GetAll()
+    return registry;
+end
+
+-- Initialize all registered modules
+function M.InitializeAll(gAdjustedSettings)
+    for name, entry in pairs(registry) do
+        if entry.module.Initialize then
+            entry.module.Initialize(gAdjustedSettings[entry.settingsKey]);
+        end
+    end
+end
+
+-- Update visuals for all registered modules
+function M.UpdateVisualsAll(gAdjustedSettings)
+    for name, entry in pairs(registry) do
+        if entry.module.UpdateVisuals then
+            entry.module.UpdateVisuals(gAdjustedSettings[entry.settingsKey]);
+        end
+    end
+end
+
+-- Cleanup all registered modules
+function M.CleanupAll()
+    for name, entry in pairs(registry) do
+        if entry.module.Cleanup then
+            entry.module.Cleanup();
+        end
+    end
+end
+
+-- Hide all modules that support SetHidden
+function M.HideAll()
+    for name, entry in pairs(registry) do
+        if entry.hasSetHidden and entry.module.SetHidden then
+            entry.module.SetHidden(true);
+        end
+    end
+end
+
+-- Check visibility based on config and hide if needed
+function M.CheckVisibility(gConfig)
+    for name, entry in pairs(registry) do
+        if entry.configKey and entry.hasSetHidden then
+            if gConfig[entry.configKey] == false then
+                entry.module.SetHidden(true);
+            end
+        end
+    end
+end
+
+-- Render a single module
+-- Returns true if rendered, false if hidden
+-- @param name: module name
+-- @param gConfig: user config
+-- @param gAdjustedSettings: adjusted module settings
+-- @param eventSystemActive: whether event system is active
+-- @param menuOpen: whether a game menu is open (optional)
+function M.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive, menuOpen)
+    local entry = registry[name];
+    if not entry then return false; end
+
+    -- Check if module should be shown
+    local shouldShow = true;
+    if entry.configKey then
+        shouldShow = gConfig[entry.configKey] ~= false;
+    end
+
+    -- Check event hiding
+    if shouldShow and entry.hideOnEventKey and eventSystemActive then
+        shouldShow = not gConfig[entry.hideOnEventKey];
+    end
+
+    -- Check menu focus hiding
+    local menuHideActive = gameState.ShouldHideModuleOnMenuFocus(
+        gConfig,
+        entry.hideOnMenuFocusKey,
+        entry.hideMacroPaletteKey
+    );
+    local partialAllianceHide = menuHideActive and entry.hideOnlyAllianceOnMenuFocusKey
+        and gConfig[entry.hideOnlyAllianceOnMenuFocusKey];
+
+    if shouldShow and menuHideActive and not partialAllianceHide then
+        shouldShow = false;
+    end
+
+    if shouldShow then
+        -- Restore visibility if module was previously hidden
+        if entry.hasSetHidden and entry.module.SetHidden then
+            entry.module.SetHidden(false);
+        end
+        if entry.module.DrawWindow then
+            local ok, err = pcall(entry.module.DrawWindow, gAdjustedSettings[entry.settingsKey]);
+            if not ok then
+                local now = os.time();
+                if not moduleErrorTimes[name] or (now - moduleErrorTimes[name] >= MODULE_ERROR_INTERVAL) then
+                    moduleErrorTimes[name] = now;
+                    print(chat.header('XIUI'):append(chat.error('Module \'' .. name .. '\' error: ' .. tostring(err))));
+                end
+            end
+        end
+        return true;
+    else
+        if entry.hasSetHidden and entry.module.SetHidden then
+            entry.module.SetHidden(true);
+        end
+        return false;
+    end
+end
+
+-- Create a visual updater function for a specific module
+function M.CreateVisualUpdater(name, saveSettingsFunc, gAdjustedSettings)
+    local entry = registry[name];
+    if not entry then return function() end; end
+
+    return function()
+        saveSettingsFunc();
+        if entry.module.UpdateVisuals then
+            entry.module.UpdateVisuals(gAdjustedSettings[entry.settingsKey]);
+        end
+    end
+end
+
+return M;

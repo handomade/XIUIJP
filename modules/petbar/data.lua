@@ -1,0 +1,1581 @@
+--[[
+* XIUI Pet Bar - Data Module
+* Handles state, caches, font objects, primitives, and helper functions
+]]--
+
+require('common');
+require('handlers.helpers');
+local ffi = require('ffi');
+local imgui = require('imgui');
+local windowBg = require('libs.windowbackground');
+local packets = require('libs.packets');
+local abilityRecast = require('libs.abilityrecast');
+local petBuffHandler = require('handlers.petbuffhandler');
+
+local data = {};
+
+-- ============================================
+-- Constants
+-- ============================================
+data.PADDING = 8;
+data.JOB_SMN = 15;
+data.JOB_BST = 9;
+data.JOB_DRG = 14;
+data.JOB_PUP = 18;
+
+data.MAX_RECAST_SLOTS = 12;
+data.RECAST_ICON_SIZE = 24;
+
+-- Ready charge system constants
+data.READY_DEFAULT_BASE_SECONDS = 30;  -- Default base recast per charge (configurable via petBarReadyBaseRecast)
+data.READY_MAX_CHARGES = 3;
+
+data.bgImageKeys = { 'bg', 'tl', 'tr', 'br', 'bl' };
+
+-- Preview type constants
+data.PREVIEW_WYVERN = 1;
+data.PREVIEW_AVATAR = 2;
+data.PREVIEW_AUTOMATON = 3;
+data.PREVIEW_JUG = 4;
+data.PREVIEW_CHARMED = 5;
+
+-- Preview type names for config dropdown
+data.previewTypeNames = {
+    [data.PREVIEW_WYVERN] = 'Wyvern (DRG)',
+    [data.PREVIEW_AVATAR] = 'Avatar (SMN)',
+    [data.PREVIEW_AUTOMATON] = 'Automaton (PUP)',
+    [data.PREVIEW_JUG] = 'Jug Pet (BST)',
+    [data.PREVIEW_CHARMED] = 'Charmed Pet (BST)',
+};
+
+-- Pet name to image file mapping
+-- Maps in-game pet names to their image file paths
+data.petImageMap = {
+    -- Avatars
+    ['Carbuncle'] = 'avatars/carbuncle.png',
+    ['Ifrit'] = 'avatars/ifrit.png',
+    ['Shiva'] = 'avatars/shiva.png',
+    ['Garuda'] = 'avatars/garuda.png',
+    ['Titan'] = 'avatars/titan.png',
+    ['Ramuh'] = 'avatars/ramuh.png',
+    ['Leviathan'] = 'avatars/leviathan.png',
+    ['Fenrir'] = 'avatars/fenrir.png',
+    ['Diabolos'] = 'avatars/diabolos.png',
+    ['Atomos'] = 'avatars/atomos.png',
+    ['Odin'] = 'avatars/odin.png',
+    ['Alexander'] = 'avatars/alexander.png',
+    ['Cait Sith'] = 'avatars/caitsith.png',
+    ['Siren'] = 'avatars/siren.png',
+    -- Spirits
+    ['Fire Spirit'] = 'spirits/firespirit.png',
+    ['Ice Spirit'] = 'spirits/icespirit.png',
+    ['Air Spirit'] = 'spirits/windspirit.png',
+    ['Earth Spirit'] = 'spirits/earthspirit.png',
+    ['Thunder Spirit'] = 'spirits/thunderspirit.png',
+    ['Water Spirit'] = 'spirits/waterspirit.png',
+    ['Light Spirit'] = 'spirits/lightspirit.png',
+    ['Dark Spirit'] = 'spirits/darkspirit.png',
+    -- DRG Wyvern
+    ['Wyvern'] = 'drg_wyvern.png',
+};
+
+-- Ordered list of avatars/spirits for config dropdown (SMN pets only)
+data.avatarList = {
+    'Carbuncle', 'Ifrit', 'Shiva', 'Garuda', 'Titan', 'Ramuh',
+    'Leviathan', 'Fenrir', 'Diabolos', 'Atomos', 'Odin', 'Alexander',
+    'Cait Sith', 'Siren',
+    'Fire Spirit', 'Ice Spirit', 'Air Spirit', 'Earth Spirit',
+    'Thunder Spirit', 'Water Spirit', 'Light Spirit', 'Dark Spirit',
+};
+
+-- Full list of all pets with images (used for primitive creation)
+data.allPetsWithImages = {
+    'Carbuncle', 'Ifrit', 'Shiva', 'Garuda', 'Titan', 'Ramuh',
+    'Leviathan', 'Fenrir', 'Diabolos', 'Atomos', 'Odin', 'Alexander',
+    'Cait Sith', 'Siren',
+    'Fire Spirit', 'Ice Spirit', 'Air Spirit', 'Earth Spirit',
+    'Thunder Spirit', 'Water Spirit', 'Light Spirit', 'Dark Spirit',
+    'Wyvern',
+};
+
+-- ============================================
+-- Jug Pet Database (from PetMe addon)
+-- ============================================
+-- Each entry: name (in-game), maxLevel, duration (minutes)
+if HzLimitedMode then
+    data.jugPets = {
+        -- 30 minute pets
+        {name = 'HareFamiliar', maxLevel = 35, duration = 30},
+        {name = 'SheepFamiliar', maxLevel = 35, duration = 30},
+        {name = 'FlowerpotBill', maxLevel = 40, duration = 30},
+        {name = 'FlytrapFamiliar', maxLevel = 40, duration = 30},
+        {name = 'TigerFamiliar', maxLevel = 40, duration = 30},
+        {name = 'BeetleFamiliar', maxLevel = 45, duration = 30},
+        {name = 'EftFamiliar', maxLevel = 45, duration = 30},
+        {name = 'LizardFamiliar', maxLevel = 45, duration = 30},
+        {name = 'MayflyFamiliar', maxLevel = 45, duration = 30},
+        {name = 'AntlionFamiliar', maxLevel = 50, duration = 30},
+        {name = 'CrabFamiliar', maxLevel = 55, duration = 30},
+        {name = 'MiteFamiliar', maxLevel = 55, duration = 30},
+        {name = 'FunguarFamiliar', maxLevel = 65, duration = 30},
+
+        -- 60 minute pets
+        {name = 'AmbusherAllie', maxLevel = 75, duration = 60},
+        {name = 'AmigoSabotender', maxLevel = 75, duration = 60},
+        {name = 'ChopsueyChucky', maxLevel = 75, duration = 60},
+        {name = 'ColdbloodComo', maxLevel = 75, duration = 60},
+        {name = 'CourierCarrie', maxLevel = 75, duration = 60},
+        {name = 'FlowerpotBen', maxLevel = 75, duration = 60},
+        {name = 'Homunculus', maxLevel = 75, duration = 60},
+        {name = 'KeenearedSteffi', maxLevel = 75, duration = 60},
+        {name = 'LifedrinkerLars', maxLevel = 75, duration = 60},
+        {name = 'LullabyMelodia', maxLevel = 75, duration = 60},
+        {name = 'PanzerGalahad', maxLevel = 75, duration = 60},
+        {name = 'SaberSiravarde', maxLevel = 75, duration = 60},
+        {name = 'ShellbusterOrob', maxLevel = 75, duration = 60},
+        {name = 'VoraciousAudrey', maxLevel = 75, duration = 60},
+    };
+else
+    data.jugPets = {
+        -- 30 minute pets
+        {name = 'CrabFamiliar', maxLevel = 55, duration = 30},
+        {name = 'AmigoSabotender', maxLevel = 75, duration = 30},
+        {name = 'CourierCarrie', maxLevel = 75, duration = 30},
+        {name = 'SlipperySilas', maxLevel = 99, duration = 30},
+
+        -- 60 minute pets
+        {name = 'SheepFamiliar', maxLevel = 35, duration = 60},
+        {name = 'FlowerpotBill', maxLevel = 40, duration = 60},
+        {name = 'FlytrapFamiliar', maxLevel = 40, duration = 60},
+        {name = 'TigerFamiliar', maxLevel = 40, duration = 60},
+        {name = 'BeetleFamiliar', maxLevel = 45, duration = 60},
+        {name = 'EftFamiliar', maxLevel = 45, duration = 60},
+        {name = 'LizardFamiliar', maxLevel = 45, duration = 60},
+        {name = 'MayflyFamiliar', maxLevel = 45, duration = 60},
+        {name = 'AntlionFamiliar', maxLevel = 50, duration = 60},
+        {name = 'LullabyMelodia', maxLevel = 55, duration = 60},
+        {name = 'MiteFamiliar', maxLevel = 55, duration = 60},
+        {name = 'FlowerpotBen', maxLevel = 63, duration = 60},
+        {name = 'SaberSiravarde', maxLevel = 63, duration = 60},
+        {name = 'ColdbloodComo', maxLevel = 65, duration = 60},
+        {name = 'FunguarFamiliar', maxLevel = 65, duration = 60},
+        {name = 'ShellbusterOrob', maxLevel = 65, duration = 60},
+        {name = 'AmbusherAllie', maxLevel = 75, duration = 60},
+        {name = 'ChopsueyChucky', maxLevel = 75, duration = 60},
+        {name = 'Homunculus', maxLevel = 75, duration = 60},
+        {name = 'LifedrinkerLars', maxLevel = 75, duration = 60},
+        {name = 'PanzerGalahad', maxLevel = 75, duration = 60},
+        {name = 'VoraciousAudrey', maxLevel = 75, duration = 60},
+
+        -- 90 minute pets
+        {name = 'HareFamiliar', maxLevel = 35, duration = 90},
+        {name = 'KeenearedSteffi', maxLevel = 55, duration = 90},
+        {name = 'CrudeRaphie', maxLevel = 99, duration = 90},
+        {name = 'GooeyGerard', maxLevel = 99, duration = 90},
+
+        -- 120 minute pets
+        {name = 'NurseryNazuna', maxLevel = 86, duration = 120},
+        {name = 'CraftyClyvonne', maxLevel = 90, duration = 120},
+        {name = 'PrestoJulio', maxLevel = 93, duration = 120},
+        {name = 'SwiftSieghard', maxLevel = 94, duration = 120},
+        {name = 'AudaciousAnna', maxLevel = 95, duration = 120},
+        {name = 'MailbusterCetas', maxLevel = 95, duration = 120},
+        {name = 'BloodclawShasra', maxLevel = 99, duration = 120},
+        {name = 'BugeyedBroncha', maxLevel = 99, duration = 120},
+        {name = 'DapperMac', maxLevel = 99, duration = 120},
+        {name = 'DipperYuly', maxLevel = 99, duration = 120},
+        {name = 'DiscreetLouise', maxLevel = 99, duration = 120},
+        {name = 'FaithfulFalcorr', maxLevel = 99, duration = 120},
+        {name = 'FatsoFargann', maxLevel = 99, duration = 120},
+        {name = 'GorefangHobs', maxLevel = 99, duration = 120},
+        {name = 'LuckyLulush', maxLevel = 99, duration = 120},
+        {name = 'TurbidToloi', maxLevel = 99, duration = 120},
+        {name = 'DroopyDortwin', maxLevel = 103, duration = 120},
+        {name = 'SunburstMalfik', maxLevel = 104, duration = 120},
+        {name = 'WarlikePatrick', maxLevel = 104, duration = 120},
+        {name = 'ScissorlegXerin', maxLevel = 105, duration = 120},
+        {name = 'RhymingShizuna', maxLevel = 107, duration = 120},
+        {name = 'AttentiveIbuki', maxLevel = 109, duration = 120},
+        {name = 'AmiableRoche', maxLevel = 110, duration = 120},
+        {name = 'BrainyWaluis', maxLevel = 113, duration = 120},
+        {name = 'HeraldHenry', maxLevel = 113, duration = 120},
+        {name = 'SuspiciousAlice', maxLevel = 113, duration = 120},
+        {name = 'HeadbreakerKen', maxLevel = 115, duration = 120},
+        {name = 'RedolentCandi', maxLevel = 115, duration = 120},
+        {name = 'AnklebiterJedd', maxLevel = 116, duration = 120},
+        {name = 'CaringKiyomaro', maxLevel = 116, duration = 120},
+        {name = 'HurlerPercival', maxLevel = 116, duration = 120},
+        {name = 'BlackbeardRandy', maxLevel = 117, duration = 120},
+        {name = 'FleetReinhard', maxLevel = 117, duration = 120},
+        {name = 'AlluringHoney', maxLevel = 119, duration = 120},
+        {name = 'BouncingBertha', maxLevel = 119, duration = 120},
+        {name = 'BraveHeroGlenn', maxLevel = 119, duration = 120},
+        {name = 'CursedAnnabelle', maxLevel = 119, duration = 120},
+        {name = 'GenerousArthur', maxLevel = 119, duration = 120},
+        {name = 'SharpwitHermes', maxLevel = 119, duration = 120},
+        {name = 'SwoopingZhivago', maxLevel = 119, duration = 120},
+        {name = 'ThreestarLynn', maxLevel = 119, duration = 120},
+
+        -- 180 minute pets
+        {name = 'FlowerpotMerle', maxLevel = 99, duration = 180},
+    };
+end
+
+-- ============================================
+-- Charm Calculation Constants (from PetMe)
+-- ============================================
+
+data.charmGear = {
+    [17936] = 1, --De Saintre's Axe
+    [17950] = 2, --Marid Ancus
+    [12517] = 4, --Beast Helm
+    [15157] = 5, --Bison Warbonnet
+    [15158] = 6, --Brave's Warbonnet
+    [16104] = 5, --Khimaira Bonnet
+    [16105] = 6, --Stout Bonnet
+    [15080] = 5, --Monster Helm
+    [15233] = 4, --Beast Helm +1
+    [15253] = 5, --Monster Helm +1
+    [12646] = 5, --Beast Jackcoat
+    [14418] = 5, --Bison Jacket
+    [14419] = 6, --Brave's Jacket
+    [14566] = 5, --Khimaira Jacket
+    [14567] = 6, --Stout Jacket
+    [15095] = 6, --Monster Jackcoat
+    [14481] = 6, --Beast Jackcoat +1
+    [14508] = 7, --Monster Jackcoat +1
+    [13969] = 3, --Beast Gloves
+    [14850] = 5, --Bison Wristbands
+    [14851] = 6, --Brave's Wristbands
+    [14981] = 5, --Khimaira Wristbands
+    [14982] = 6, --Stout Wristbands
+    [14898] = 3, --Beast Gloves +1
+    [15110] = 4, --Monster Gloves
+    [14917] = 4, --Monster Gloves +1
+    [14222] = 6, --Beast Trousers
+    [14319] = 5, --Bison Kecks
+    [14320] = 6, --Brave's Kecks
+    [15645] = 5, --Khimaira Kecks
+    [15646] = 6, --Stout Kecks
+    [15125] = 2, --Monster Trousers
+    [15569] = 6, --Beast Trousers +1
+    [15588] = 2, --Monster Trousers +1
+    [14097] = 2, --Beast Gaiters
+    [15307] = 5, --Bison Gamashes
+    [15308] = 6, --Brave's Gamashes
+    [15731] = 5, --Khimaira Gamashes
+    [15732] = 6, --Stout Gamashes
+    [15360] = 2, --Beast Gaiters +1
+    [15140] = 3, --Monster Gaiters
+    [15673] = 3, --Monster Gaiters +1
+    [14658] = 4, --Atlaua's Ring
+    [13667] = 5, --Trimmer's Mantle (HorizonXI only, when /BST)
+};
+
+data.dLevel = {
+    {ld = -6, chg = 0.04},
+    {ld = -5, chg = 0.08},
+    {ld = -4, chg = 0.12},
+    {ld = -3, chg = 0.16},
+    {ld = -2, chg = 0.33},
+    {ld = -1, chg = 0.66},
+    {ld =  0, chg = 1.00},
+    {ld =  1, chg = 1.40},
+    {ld =  2, chg = 1.80},
+    {ld =  3, chg = 2.20},
+    {ld =  4, chg = 2.60},
+    {ld =  5, chg = 3.00},
+    {ld =  6, chg = 3.40},
+    {ld =  7, chg = 4.00},
+    {ld =  8, chg = 5.00},
+    {ld =  9, chg = 6.00},
+};
+
+data.PacketID = {
+    OUT_ACTION = 0x01A,
+    OUT_CHECK = 0x0DD,
+    IN_CHECK = 0x029,
+};
+
+data.ActionID = {
+    CHARM = 0x34,
+};
+
+data.CharmState = {
+    NONE = 0,
+    SENDING_PACKET = 1,
+    CHECK_PACKET = 2,
+};
+
+-- Build a lookup table for faster access
+data.jugPetLookup = {};
+for _, pet in ipairs(data.jugPets) do
+    data.jugPetLookup[pet.name] = pet;
+end
+
+-- Get jug pet info by name
+function data.GetJugPetInfo(petName)
+    if petName == nil then return nil; end
+    return data.jugPetLookup[petName];
+end
+
+-- Check if a pet name is a jug pet
+function data.IsJugPet(petName)
+    return data.GetJugPetInfo(petName) ~= nil;
+end
+
+-- Get pet level based on player level and pet type
+function data.GetPetLevel(petName, playerLevel)
+    if petName == nil or playerLevel == nil then return nil; end
+
+    -- For jug pets, level is min(playerLevel, petMaxLevel)
+    local jugInfo = data.GetJugPetInfo(petName);
+    if jugInfo then
+        return math.min(playerLevel, jugInfo.maxLevel);
+    end
+
+    -- For avatars/spirits, they match player's SMN level (main or sub)
+    if data.petImageMap[petName] then
+        return playerLevel;
+    end
+
+    -- For charmed pets, get level from charm check packet
+    if gConfig.petBarCharmLevel then
+       return gConfig.petBarCharmLevel;
+    end
+
+    -- Fallback
+    return nil;
+    
+end
+
+-- ============================================
+-- Pet Timer Tracking Functions
+-- ============================================
+
+-- Detect and track a new pet summon
+function data.TrackPetSummon(petName, petJob)
+    if petName == nil then
+        -- Pet dismissed - clear tracking
+        data.petSummonTime = nil;
+        data.petExpireTime = nil;
+        data.petType = nil;
+        data.lastTrackedPetName = nil;
+        data.petTargetServerId = nil;
+
+        -- Reset charm state only if we're not currently processing a charm
+        if (data.charmState == data.CharmState.NONE) then
+            data.charmTarget = nil;
+            data.charmTargetIdx = nil;
+        end
+
+        -- Clear pet target
+        data.petTargetServerId = nil;
+
+        -- Clear persisted timer data
+        if gConfig then
+            gConfig.petBarPetSummonTime = nil;
+            gConfig.petBarPetExpireTime = nil;
+            gConfig.petBarPetType = nil;
+            gConfig.petBarPetName = nil;
+        end
+        return;
+    end
+
+    -- Only track if pet name changed (new summon)
+    if petName == data.lastTrackedPetName then
+        return;
+    end
+
+    data.lastTrackedPetName = petName;
+    data.petSummonTime = os.time();
+
+    -- Determine pet type and calculate expiration
+    local jugInfo = data.GetJugPetInfo(petName);
+    local player = GetPlayerSafe();
+    local subJob = player and player:GetSubJob() or 0;
+    -- Charm detection: BST main has no native pet (any non-jug = charm); a pet-job
+    -- main + /BST uses charmTarget (only Charm sets it) to tell wyvern from charm.
+    local isCharm = false;
+    if not jugInfo then
+        if petJob == data.JOB_BST then
+            isCharm = true;
+        elseif subJob == data.JOB_BST then
+            isCharm = data.charmTarget ~= nil;
+        end
+    end
+
+    if jugInfo then
+        data.petType = 'jug';
+        data.petExpireTime = data.petSummonTime + (jugInfo.duration * 60);
+        data.charmExpireTime = nil;
+    elseif isCharm then
+        -- charmExpireTime is set via charm packet interception (calculateCharmTime).
+        data.petType = 'charm';
+        data.petExpireTime = nil;
+    elseif petJob == data.JOB_SMN then
+        data.petType = 'avatar';
+        data.petExpireTime = nil;
+        data.charmExpireTime = nil;
+    elseif petJob == data.JOB_DRG then
+        data.petType = 'wyvern';
+        data.petExpireTime = nil;  -- Wyverns don't expire on timer
+        data.charmExpireTime = nil;
+    elseif petJob == data.JOB_PUP then
+        data.petType = 'automaton';
+        data.petExpireTime = nil;  -- Automatons don't expire on timer
+        data.charmExpireTime = nil;
+    else
+        data.petType = nil;
+        data.petExpireTime = nil;
+        data.charmExpireTime = nil;
+    end
+
+    -- Persist timer data for session survival
+    if gConfig then
+        gConfig.petBarPetSummonTime = data.petSummonTime;
+        gConfig.petBarPetExpireTime = data.petExpireTime;
+        gConfig.petBarPetType = data.petType;
+        gConfig.petBarPetName = petName;
+        gConfig.petBarCharmExpireTime = data.charmExpireTime;
+    end
+end
+
+-- Restore timers from persisted config (called on addon load)
+function data.RestoreTimersFromConfig()
+    if gConfig == nil then return; end
+
+    local function clearPersistedTimers()
+        gConfig.petBarPetSummonTime = nil;
+        gConfig.petBarPetExpireTime = nil;
+        gConfig.petBarPetType = nil;
+        gConfig.petBarPetName = nil;
+        gConfig.petBarCharmExpireTime = nil;
+    end
+
+    -- Check if we have persisted timer data
+    if gConfig.petBarPetSummonTime and gConfig.petBarPetName then
+        local now = os.time();
+
+        -- For jug pets, check if timer hasn't expired
+        if gConfig.petBarPetExpireTime then
+            if gConfig.petBarPetExpireTime > now then
+                 -- Timer still valid, restore it
+                data.petSummonTime = gConfig.petBarPetSummonTime;
+                data.petExpireTime = gConfig.petBarPetExpireTime;
+                data.petType = gConfig.petBarPetType;
+                data.lastTrackedPetName = gConfig.petBarPetName;
+                data.charmExpireTime = gConfig.petBarCharmExpireTime;
+            else
+                clearPersistedTimers();
+            end
+        elseif gConfig.petBarCharmExpireTime then
+            -- Charm timer - restore if valid
+            if gConfig.petBarCharmExpireTime > now then
+                data.petSummonTime = gConfig.petBarPetSummonTime;
+                data.petType = gConfig.petBarPetType;
+                data.lastTrackedPetName = gConfig.petBarPetName;
+                data.charmExpireTime = gConfig.petBarCharmExpireTime;
+            else
+                clearPersistedTimers();
+            end
+        end
+    end
+end
+
+-- Get remaining time for jug pet (in seconds)
+function data.GetJugTimeRemaining()
+    if data.petType ~= 'jug' or data.petExpireTime == nil then
+        return nil;
+    end
+    local remaining = data.petExpireTime - os.time();
+    return math.max(0, remaining);
+end
+
+-- Get remaining time for charm (in seconds)
+function data.GetCharmTimeRemaining()
+    if data.petType ~= 'charm' or data.charmExpireTime == nil then
+        return nil;
+    end
+    local remaining = data.charmExpireTime - os.time();
+    return math.max(0, remaining);
+end
+
+-- Get settings key for a pet name (converts to lowercase, removes spaces)
+function data.GetPetSettingsKey(petName)
+    if petName == nil then return nil; end
+    return petName:lower():gsub(' ', '');
+end
+
+-- Get the image path for a pet by name
+function data.GetPetImagePath(petName)
+    if petName == nil then return nil; end
+    local imageFile = data.petImageMap[petName];
+    if imageFile then
+        return string.format('%s/assets/pets/%s', addon.path, imageFile);
+    end
+    return nil;
+end
+
+-- ============================================
+-- State Variables
+-- ============================================
+
+-- Pet target tracking (from packet data)
+data.petTargetServerId = nil;
+
+-- Current pet name (for image loading)
+data.currentPetName = nil;
+
+-- Pet timer tracking (jug pets and charm)
+data.petSummonTime = nil;       -- os.time() when pet was summoned
+data.petExpireTime = nil;       -- os.time() when pet will despawn (jug only)
+data.petType = nil;             -- 'jug', 'charm', 'avatar', 'wyvern', 'automaton'
+data.lastTrackedPetName = nil;  -- Track pet name changes to detect new summons
+data.charmExpireTime = nil;     -- os.time() when charm expires
+data.charmState = 0;            -- Packet interception state
+data.charmTarget = nil;         -- Target ID for charm check
+data.charmTargetIdx = nil;      -- Target Index for charm check
+
+-- Pet image textures (D3D textures rendered via drawList:AddImage)
+data.petImageTextures = {};
+
+-- Pet image metadata: petKey -> { baseWidth, baseHeight, exists }
+data.petImageMeta = {};
+
+-- Recast timer tracking
+data.recastMaxTimers = {};
+
+-- Window positioning (shared with pet target)
+data.lastMainWindowPosX = 0;
+data.lastMainWindowTop = 0;   -- Top of pet bar (stable anchor for snap Y offset)
+data.lastMainWindowBottom = 0;
+data.lastTotalRowWidth = 150;
+data.lastWindowFlags = nil;
+data.lastColorConfig = nil;
+data.lastSettings = nil;
+
+-- Cached window flags
+local baseWindowFlags = nil;
+
+-- ============================================
+-- Helper Functions
+-- ============================================
+
+-- Get cached base window flags
+function data.getBaseWindowFlags()
+    if baseWindowFlags == nil then
+        baseWindowFlags = bit.bor(
+            ImGuiWindowFlags_NoDecoration,
+            ImGuiWindowFlags_AlwaysAutoResize,
+            ImGuiWindowFlags_NoFocusOnAppearing,
+            ImGuiWindowFlags_NoNav,
+            ImGuiWindowFlags_NoBackground,
+            ImGuiWindowFlags_NoBringToFrontOnFocus,
+            ImGuiWindowFlags_NoDocking
+        );
+    end
+    return baseWindowFlags;
+end
+
+-- Get pet entity from player's pet target index
+function data.GetPetEntity()
+    local playerEntity = GetPlayerEntity();
+    if playerEntity == nil or playerEntity.PetTargetIndex == 0 then
+        return nil;
+    end
+    return GetEntity(playerEntity.PetTargetIndex);
+end
+
+-- Get entity by server ID (optimized using packets.GetIndexFromId)
+function data.GetEntityByServerId(sid)
+    if sid == nil or sid == 0 then return nil; end
+    local index = packets.GetIndexFromId(sid);
+    if index == 0 then return nil; end
+    return GetEntity(index);
+end
+
+-- Get primary pet job (main takes precedence among usable pet jobs)
+function data.GetPetJob()
+    local jobs = data.GetPetJobs();
+    return jobs[1];
+end
+
+-- Usable pet jobs from main/sub (main first, unique).
+-- SMN/BST work as main or sub. DRG/PUP only as main (/drg /pup cannot summon).
+-- Result depends only on main/sub job, so it's cached and rebuilt only when
+-- those change (this is called several times per frame from the render path).
+local petJobsCache = nil;
+local petJobsCacheKey = nil;
+
+local function IsPetCapableJob(jobId, allowSub)
+    if allowSub then
+        return jobId == data.JOB_SMN or jobId == data.JOB_BST;
+    end
+    return jobId == data.JOB_SMN or jobId == data.JOB_BST
+        or jobId == data.JOB_DRG or jobId == data.JOB_PUP;
+end
+
+---@return number[]
+function data.GetPetJobs()
+    local player = GetPlayerSafe();
+    if player == nil then return {}; end
+
+    local mainJob = player:GetMainJob() or 0;
+    local subJob = player:GetSubJob() or 0;
+    local key = mainJob * 100 + subJob;
+    if petJobsCache and petJobsCacheKey == key then
+        return petJobsCache;
+    end
+
+    local jobs = {};
+    if IsPetCapableJob(mainJob, false) then
+        jobs[#jobs + 1] = mainJob;
+    end
+    -- Sub: only SMN/BST, and not already added as main
+    if IsPetCapableJob(subJob, true) and subJob ~= mainJob then
+        jobs[#jobs + 1] = subJob;
+    end
+
+    petJobsCache = jobs;
+    petJobsCacheKey = key;
+    return jobs;
+end
+
+local PET_TYPE_SETTINGS_KEYS = {
+    avatar = 'petBarAvatar',
+    charm = 'petBarCharm',
+    jug = 'petBarJug',
+    automaton = 'petBarAutomaton',
+    wyvern = 'petBarWyvern',
+};
+
+local PET_JOB_TYPE_KEYS = {
+    [data.JOB_SMN] = { 'avatar' },
+    [data.JOB_DRG] = { 'wyvern' },
+    [data.JOB_PUP] = { 'automaton' },
+    [data.JOB_BST] = { 'jug', 'charm' },
+};
+
+--- Whether a pet-type settings block has Always Visible enabled.
+---@param typeKey string
+---@return boolean
+function data.IsPetTypeAlwaysVisible(typeKey)
+    local settingsKey = PET_TYPE_SETTINGS_KEYS[typeKey];
+    if not settingsKey then return false; end
+    local settings = gConfig[settingsKey] or {};
+    return settings.alwaysVisible == true;
+end
+
+--- True if this pet job has at least one Always Visible type the player can use.
+---@param jobId number
+---@return boolean
+function data.IsPetJobAlwaysVisible(jobId)
+    for _, typeKey in ipairs(PET_JOB_TYPE_KEYS[jobId] or {}) do
+        if data.IsPetTypeAlwaysVisible(typeKey) then
+            return true;
+        end
+    end
+    return false;
+end
+
+--- True if any usable pet job (current main/sub rules) has Always Visible on.
+---@return boolean
+function data.HasAnyAlwaysVisiblePetType()
+    for _, jobId in ipairs(data.GetPetJobs()) do
+        if data.IsPetJobAlwaysVisible(jobId) then
+            return true;
+        end
+    end
+    return false;
+end
+
+--- Pet jobs that should contribute timers when no pet is out (each needs its own AV).
+---@return number[]
+function data.GetAlwaysVisiblePetJobs()
+    local jobs = {};
+    for _, jobId in ipairs(data.GetPetJobs()) do
+        if data.IsPetJobAlwaysVisible(jobId) then
+            table.insert(jobs, jobId);
+        end
+    end
+    return jobs;
+end
+
+-- Get pet type key for per-type settings lookup
+-- Returns: 'avatar', 'charm', 'jug', 'automaton', 'wyvern' (defaults to 'avatar')
+function data.GetPetTypeKey()
+    -- Preview mode: derive from preview type
+    if showConfig and showConfig[1] and gConfig.petBarPreview then
+        local previewType = gConfig.petBarPreviewType or data.PREVIEW_AVATAR;
+        if previewType == data.PREVIEW_WYVERN then
+            return 'wyvern';
+        elseif previewType == data.PREVIEW_AVATAR then
+            return 'avatar';
+        elseif previewType == data.PREVIEW_AUTOMATON then
+            return 'automaton';
+        elseif previewType == data.PREVIEW_JUG then
+            return 'jug';
+        elseif previewType == data.PREVIEW_CHARMED then
+            return 'charm';
+        end
+        return 'avatar';
+    end
+
+    -- Real mode: use tracked pet type
+    if data.petType then
+        return data.petType;
+    end
+
+    -- Fallback: try to determine from current job
+    local petJob = data.GetPetJob();
+    if petJob == data.JOB_SMN then
+        return 'avatar';
+    elseif petJob == data.JOB_DRG then
+        return 'wyvern';
+    elseif petJob == data.JOB_PUP then
+        return 'automaton';
+    elseif petJob == data.JOB_BST then
+        -- Default BST to jug, but check Always Visible settings
+        -- If Charmed is Always Visible but Jug is NOT, we must return 'charm'
+        -- so that the display module uses the Charmed settings (where showTimers is forced ON).
+        -- Otherwise, if Jug is the active/fallback type but has showTimers=false, it would hide Charmed timers too.
+        local jugSettings = gConfig.petBarJug or {};
+        local charmSettings = gConfig.petBarCharm or {};
+        
+        if charmSettings.alwaysVisible and not jugSettings.alwaysVisible then
+            return 'charm';
+        end
+        
+        -- Default to jug (charm requires tracking or explicit override above)
+        return 'jug';
+    end
+
+    return 'avatar';  -- Default fallback
+end
+
+-- Get pet data - single entry point for both preview and real data
+-- This follows the partylist pattern where preview is handled inside the data function
+function data.GetPetData()
+    -- Preview check inside data function (like partylist's GetMemberInformation)
+    if showConfig[1] and gConfig.petBarPreview then
+        local previewType = gConfig.petBarPreviewType or data.PREVIEW_AVATAR;
+        return data.GetPreviewPetData(previewType);
+    end
+
+    -- Real data
+    local player = GetPlayerSafe();
+    local party = GetPartySafe();
+    local playerEnt = GetPlayerEntity();
+
+    if player == nil or party == nil or playerEnt == nil then
+        -- No pet - clear tracking
+        data.TrackPetSummon(nil, nil);
+        return nil;
+    end
+
+    if player.isZoning or player:GetMainJob() == 0 then
+        return nil;
+    end
+
+    local pet = data.GetPetEntity();
+    if pet == nil then
+        -- No pet - clear tracking
+        data.TrackPetSummon(nil, nil);
+        return nil;
+    end
+
+    local petJob = data.GetPetJob();
+    -- Only PUP automatons use MP in era (avatars don't)
+    local showMp = petJob == data.JOB_PUP;
+    local petName = pet.Name or 'Pet';
+
+    -- Track pet summon for timer tracking
+    data.TrackPetSummon(petName, petJob);
+
+    -- Calculate pet level
+    local playerLevel = player:GetMainJobLevel();
+    if petJob and petJob ~= player:GetMainJob() then
+        playerLevel = player:GetSubJobLevel();
+    end
+    local petLevel = data.GetPetLevel(petName, playerLevel);
+
+    -- Check pet type and get timer info
+    local isJug = data.IsJugPet(petName);
+    local isCharmed = (data.petType == 'charm');
+    local jugTimeRemaining = data.GetJugTimeRemaining();
+    local charmElapsed = data.GetCharmElapsedTime();
+
+    -- TP: clamp to 0-3000; values above 3000 are treated as garbage (0) per user request.
+    local petTp = player:GetPetTP() or 0;
+    if petTp > 3000 or petTp < 0 then petTp = 0; end
+
+    return {
+        name = petName,
+        hpPercent = pet.HPPercent or 0,
+        distance = math.sqrt(pet.Distance),
+        mpPercent = player:GetPetMPPercent() or 0,
+        tp = petTp,
+        job = petJob,
+        showMp = showMp,
+        -- New fields
+        level = petLevel,
+        isJug = isJug,
+        isCharmed = isCharmed,
+        jugTimeRemaining = jugTimeRemaining,
+        charmElapsed = charmElapsed,
+        charmTimeRemaining = data.GetCharmTimeRemaining(),
+        isCharmCountDown = true,
+        petType = data.petType,
+    };
+end
+
+-- Format timer from raw recast value to readable string (mm:ss format)
+-- Raw recast values are in 60ths of a second (60 units = 1 second)
+function data.FormatTimer(rawTimer)
+    if rawTimer <= 0 then return 'Ready'; end
+    local totalSeconds = math.floor(rawTimer / 60);
+    local mins = math.floor(totalSeconds / 60);
+    local secs = totalSeconds % 60;
+    if mins > 0 then
+        return string.format('%d:%02d', mins, secs);
+    else
+        return string.format('%ds', secs);
+    end
+end
+
+-- Format seconds into mm:ss
+function data.FormatTimeMMSS(seconds)
+    if (seconds == nil) then
+        return '0:00';
+    end
+
+    local sign = '';
+    if (seconds < 0) then
+        sign = '-';
+        seconds = math.abs(seconds);
+    end
+
+    local mins = math.floor(seconds / 60);
+    local secs = math.floor(seconds % 60);
+    return string.format('%s%d:%02d', sign, mins, secs);
+end
+
+-- Check if an ability should be shown based on config settings
+local function ShouldShowAbility(name, petJob)
+    if petJob == data.JOB_SMN then
+        if name:find('Blood Pact') then
+            if name:find('Rage') then
+                return gConfig.petBarSmnShowBPRage ~= false;
+            elseif name:find('Ward') then
+                return gConfig.petBarSmnShowBPWard ~= false;
+            else
+                return gConfig.petBarSmnShowBPRage ~= false or gConfig.petBarSmnShowBPWard ~= false;
+            end
+        elseif name == 'Astral Flow' then return gConfig.petBarShow2HourAbility;
+        elseif name == 'Apogee' then return gConfig.petBarSmnShowApogee ~= false;
+        elseif name == 'Mana Cede' then return gConfig.petBarSmnShowManaCede ~= false;
+        end
+    elseif petJob == data.JOB_BST then
+        -- Ready and Sic share the same timer (ID 102), but have separate configs now
+        if name == 'Ready' then return gConfig.petBarBstShowReady ~= false;
+        elseif name == 'Sic' then return gConfig.petBarBstShowSic ~= false;
+        elseif name == 'Reward' then 
+            -- Check pet type context for Reward (Charm vs Jug)
+            local petType = data.GetPetTypeKey();
+            if petType == 'charm' then
+                return gConfig.petBarBstShowRewardCharm ~= false;
+            else
+                return gConfig.petBarBstShowReward ~= false;
+            end
+        elseif name == 'Call Beast' then return gConfig.petBarBstShowCallBeast ~= false;
+        elseif name == 'Bestial Loyalty' then return gConfig.petBarBstShowBestialLoyalty ~= false;
+        elseif name == 'Familiar' then return gConfig.petBarShow2HourAbility;
+        end
+    elseif petJob == data.JOB_DRG then
+        if name == 'Call Wyvern' then return gConfig.petBarDrgShowCallWyvern ~= false;
+        elseif name == 'Spirit Link' then return gConfig.petBarDrgShowSpiritLink ~= false;
+        elseif name == 'Deep Breathing' then return gConfig.petBarDrgShowDeepBreathing ~= false;
+        elseif name == 'Steady Wing' then return gConfig.petBarDrgShowSteadyWing ~= false;
+        elseif name == 'Spirit Surge' then return gConfig.petBarShow2HourAbility;
+        end
+    elseif petJob == data.JOB_PUP then
+        if name == 'Activate' then return gConfig.petBarPupShowActivate ~= false;
+        elseif name == 'Repair' then return gConfig.petBarPupShowRepair ~= false;
+        elseif name == 'Deus Ex Automata' then return gConfig.petBarPupShowDeusExAutomata ~= false;
+        elseif name == 'Deploy' then return gConfig.petBarPupShowDeploy ~= false;
+        elseif name == 'Deactivate' then return gConfig.petBarPupShowDeactivate ~= false;
+        elseif name == 'Retrieve' then return gConfig.petBarPupShowRetrieve ~= false;
+        elseif name == 'Overdrive' then return gConfig.petBarShow2HourAbility;
+        end
+    end
+    return false;
+end
+
+-- Mock ability data for preview mode
+local mockAbilities = {
+    [data.JOB_SMN] = {
+        {name = 'Blood Pact: Rage', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Blood Pact: Ward', timer = 30, maxTimer = 60, isReady = false},
+        {name = 'Apogee', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Mana Cede', timer = 45, maxTimer = 60, isReady = false},
+    },
+    [data.JOB_BST] = {
+        {name = 'Ready', timer = 2400, maxTimer = 5400, isReady = false,
+            isChargeAbility = true, maxCharges = 3, charges = 2, nextChargeTimer = 600, chargeValue = 1800},
+        {name = 'Reward', timer = 15, maxTimer = 90, isReady = false},
+        {name = 'Call Beast', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Bestial Loyalty', timer = 20, maxTimer = 60, isReady = false},
+    },
+    [data.JOB_DRG] = {
+        {name = 'Call Wyvern', timer = 0, maxTimer = 20, isReady = true},
+        {name = 'Spirit Link', timer = 30, maxTimer = 120, isReady = false},
+        {name = 'Deep Breathing', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Steady Wing', timer = 40, maxTimer = 120, isReady = false},
+    },
+    [data.JOB_PUP] = {
+        {name = 'Activate', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Repair', timer = 15, maxTimer = 180, isReady = false},
+        {name = 'Deploy', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Deactivate', timer = 25, maxTimer = 60, isReady = false},
+        {name = 'Retrieve', timer = 10, maxTimer = 30, isReady = false},
+        {name = 'Deus Ex Automata', timer = 0, maxTimer = 60, isReady = true},
+    },
+};
+
+-- ============================================
+-- Ability Recast (using shared library)
+-- ============================================
+
+-- Wrapper for shared library (maintains existing interface)
+local function GetAbilityTimerById(timerId)
+    return abilityRecast.GetAbilityTimerByTimerId(timerId);
+end
+
+-- Get job from preview type (for preview mode)
+local function GetPreviewJob(previewType)
+    if previewType == data.PREVIEW_WYVERN then
+        return data.JOB_DRG;
+    elseif previewType == data.PREVIEW_AVATAR then
+        return data.JOB_SMN;
+    elseif previewType == data.PREVIEW_AUTOMATON then
+        return data.JOB_PUP;
+    else -- PREVIEW_JUG or PREVIEW_CHARMED
+        return data.JOB_BST;
+    end
+end
+
+-- Pet ability IDs for direct memory reading (static; hoisted so it isn't rebuilt per frame)
+local petAbilityIds = {
+    [data.JOB_SMN] = {
+        {id = 173, name = 'Blood Pact: Rage', maxTimer = 3600},
+        {id = 174, name = 'Blood Pact: Ward', maxTimer = 3600},
+        {id = 108, name = 'Apogee', maxTimer = 3600},
+        {id = 71, name = 'Mana Cede', maxTimer = 3600},
+    },
+    [data.JOB_BST] = {
+        {id = 102, name = 'Ready', maxTimer = 1800},
+        {id = 103, name = 'Reward', maxTimer = 5400},
+        {id = 104, name = 'Call Beast', maxTimer = 3600},
+        {id = 104, name = 'Bestial Loyalty', maxTimer = 3600},
+    },
+    [data.JOB_DRG] = {
+        {id = 163, name = 'Call Wyvern', maxTimer = 72000},
+        {id = 162, name = 'Spirit Link', maxTimer = 7200},
+        {id = 164, name = 'Deep Breathing', maxTimer = 3600},
+        {id = 70, name = 'Steady Wing', maxTimer = 7200},
+    },
+    [data.JOB_PUP] = {
+        {id = 205, name = 'Activate', maxTimer = 3600},
+        {id = 206, name = 'Repair', maxTimer = 10800},
+        {id = 207, name = 'Deploy', maxTimer = 3600},
+        {id = 208, name = 'Deactivate', maxTimer = 3600},
+        {id = 209, name = 'Retrieve', maxTimer = 3600},
+        {id = 115, name = 'Deus Ex Automata', maxTimer = 3600},
+    },
+};
+
+local function GetTimerEntry(abilityInfo, nameOverride)
+    local name = nameOverride or abilityInfo.name;
+    local timer = GetAbilityTimerById(abilityInfo.id);
+
+    if timer ~= nil then
+        local maxTimer = abilityInfo.maxTimer;
+        if timer > 0 then
+            if data.recastMaxTimers[name] == nil or timer > data.recastMaxTimers[name] then
+                data.recastMaxTimers[name] = timer;
+            end
+            maxTimer = data.recastMaxTimers[name] or maxTimer;
+        else
+            data.recastMaxTimers[name] = nil;
+        end
+
+        local timerEntry = {
+            name = name,
+            timer = timer,
+            maxTimer = maxTimer,
+            formatted = data.FormatTimer(timer),
+            isReady = timer <= 0,
+        };
+
+        if name == 'Ready' then
+            timerEntry.isChargeAbility = true;
+            timerEntry.maxCharges = data.READY_MAX_CHARGES;
+
+            local timerData = abilityRecast.GetAbilityTimerDataByTimerId(abilityInfo.id);
+            local modifier = timerData.Modifier or 0;
+            local configBasePerCharge = gConfig.petBarReadyBaseRecast or data.READY_DEFAULT_BASE_SECONDS;
+            local totalBaseSeconds = configBasePerCharge * data.READY_MAX_CHARGES;
+            local baseRecast = 60 * (totalBaseSeconds + modifier);
+            local chargeValue = baseRecast / data.READY_MAX_CHARGES;
+            timerEntry.chargeValue = chargeValue;
+
+            if timer <= 0 then
+                timerEntry.charges = data.READY_MAX_CHARGES;
+                timerEntry.nextChargeTimer = 0;
+            else
+                local chargesRecharging = math.ceil(timer / chargeValue);
+                timerEntry.charges = math.max(0, data.READY_MAX_CHARGES - chargesRecharging);
+                timerEntry.nextChargeTimer = ((timer - 1) % chargeValue) + 1;
+            end
+        end
+
+        return timerEntry;
+    end
+    return nil;
+end
+
+local function AppendJobTimers(petJob, timers, activePetType)
+    local abilityList = petAbilityIds[petJob];
+    if not abilityList then return; end
+
+    for _, abilityInfo in ipairs(abilityList) do
+        local name = abilityInfo.name;
+        local processStandard = true;
+
+        if petJob == data.JOB_BST then
+            local jugSettings = gConfig.petBarJug or {};
+            local charmSettings = gConfig.petBarCharm or {};
+            local jugVisible = jugSettings.alwaysVisible;
+            local charmVisible = charmSettings.alwaysVisible;
+
+            if activePetType == 'charm' and abilityInfo.id == 102 then
+                name = 'Sic';
+            end
+
+            if activePetType == 'jug' then
+                -- Active jug: Ready / Reward / Call Beast / Bestial Loyalty
+                processStandard = false;
+                if name == 'Ready' and gConfig.petBarBstShowReady ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                elseif name == 'Reward' and gConfig.petBarBstShowReward ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                elseif name == 'Call Beast' and gConfig.petBarBstShowCallBeast ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                elseif name == 'Bestial Loyalty' and gConfig.petBarBstShowBestialLoyalty ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                end
+            elseif activePetType == 'charm' then
+                -- Active charm: Sic / Reward only (no wyvern / jug Call Beast)
+                processStandard = false;
+                if name == 'Sic' and gConfig.petBarBstShowSic ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                elseif name == 'Reward' and gConfig.petBarBstShowRewardCharm ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                end
+            elseif activePetType == nil then
+                -- No pet: only Jug and/or Charm sides whose Always Visible is on
+                processStandard = false;
+                if not jugVisible and not charmVisible then
+                    -- Job was included by mistake; skip BST entries
+                elseif abilityInfo.id == 102 then
+                    if jugVisible and gConfig.petBarBstShowReady ~= false then
+                        local entry = GetTimerEntry(abilityInfo, 'Ready');
+                        if entry then table.insert(timers, entry); end
+                    end
+                    if charmVisible and gConfig.petBarBstShowSic ~= false then
+                        local entry = GetTimerEntry(abilityInfo, 'Sic');
+                        if entry then table.insert(timers, entry); end
+                    end
+                elseif abilityInfo.name == 'Reward' then
+                    local shown = false;
+                    if jugVisible and gConfig.petBarBstShowReward ~= false then
+                        local entry = GetTimerEntry(abilityInfo, 'Reward');
+                        if entry then
+                            table.insert(timers, entry);
+                            shown = true;
+                        end
+                    end
+                    if not shown and charmVisible and gConfig.petBarBstShowRewardCharm ~= false then
+                        local entry = GetTimerEntry(abilityInfo, 'Reward');
+                        if entry then table.insert(timers, entry); end
+                    end
+                elseif abilityInfo.name == 'Call Beast' or abilityInfo.name == 'Bestial Loyalty' then
+                    if jugVisible then
+                        if name == 'Call Beast' and gConfig.petBarBstShowCallBeast ~= false then
+                            local entry = GetTimerEntry(abilityInfo, name);
+                            if entry then table.insert(timers, entry); end
+                        elseif name == 'Bestial Loyalty' and gConfig.petBarBstShowBestialLoyalty ~= false then
+                            local entry = GetTimerEntry(abilityInfo, name);
+                            if entry then table.insert(timers, entry); end
+                        end
+                    end
+                end
+            end
+        end
+
+        if processStandard and ShouldShowAbility(name, petJob) then
+            local entry = GetTimerEntry(abilityInfo, name);
+            if entry then table.insert(timers, entry); end
+        end
+    end
+end
+
+-- Get pet recasts - single entry point for both preview and real data
+-- This follows the partylist pattern where preview is handled inside the data function
+function data.GetPetRecasts()
+    local timers = {};
+
+    -- Preview check FIRST (before getting real job) - like partylist's GetMemberInformation
+    if showConfig[1] and gConfig.petBarPreview then
+        -- Derive job from preview type, not real player job
+        local previewType = gConfig.petBarPreviewType or data.PREVIEW_AVATAR;
+        local petJob = GetPreviewJob(previewType);
+
+        local mockData = mockAbilities[petJob];
+        if mockData then
+            for _, ability in ipairs(mockData) do
+                -- Create a copy to avoid modifying the static mock data
+                local abilityCopy = deep_copy_table(ability);
+                
+                -- Handle Charmed Pet preview (Show Sic instead of Ready)
+                if previewType == data.PREVIEW_CHARMED then
+                    if abilityCopy.name == 'Ready' then
+                        -- Create a fresh table for Sic to ensure no charge data remains
+                        local sicAbility = {
+                            name = 'Sic',
+                            timer = abilityCopy.timer,
+                            maxTimer = abilityCopy.maxTimer,
+                            isReady = abilityCopy.isReady,
+                            isChargeAbility = false, -- Explicitly false
+                        };
+                        abilityCopy = sicAbility;
+                    elseif abilityCopy.name == 'Call Beast' or abilityCopy.name == 'Bestial Loyalty' then
+                        -- Skip Jug abilities for Charmed preview
+                        abilityCopy = nil;
+                    elseif abilityCopy.name == 'Reward' and gConfig.petBarBstShowRewardCharm == false then
+                        -- Explicitly hide Reward if disabled in Charm settings
+                        abilityCopy = nil;
+                    end
+                end
+
+                if abilityCopy and ShouldShowAbility(abilityCopy.name, petJob) then
+                    table.insert(timers, abilityCopy);
+                end
+            end
+        end
+        return timers;
+    end
+
+    -- Real mode
+    local petJobs = data.GetPetJobs();
+    if #petJobs == 0 then return timers; end
+
+    local hasPet = data.GetPetEntity() ~= nil;
+    local activePetType = hasPet and (data.petType or data.GetPetTypeKey()) or nil;
+
+    -- With a pet out: only that pet's job timers.
+    -- No pet: only jobs whose own Always Visible type(s) are on
+    -- (e.g. DRG/BST with Wyvern AV but not Charm AV -> wyvern only).
+    local jobsToShow = {};
+    if hasPet then
+        local activeJob = nil;
+        if activePetType == 'charm' or activePetType == 'jug' then
+            activeJob = data.JOB_BST;
+        elseif activePetType == 'wyvern' then
+            activeJob = data.JOB_DRG;
+        elseif activePetType == 'avatar' then
+            activeJob = data.JOB_SMN;
+        elseif activePetType == 'automaton' then
+            activeJob = data.JOB_PUP;
+        end
+        -- Only show if this pet job is actually usable on current main/sub
+        if activeJob then
+            for _, jobId in ipairs(petJobs) do
+                if jobId == activeJob then
+                    table.insert(jobsToShow, activeJob);
+                    break;
+                end
+            end
+        end
+    else
+        jobsToShow = data.GetAlwaysVisiblePetJobs();
+    end
+
+    if #jobsToShow == 0 then return timers; end
+
+    for _, jobId in ipairs(jobsToShow) do
+        AppendJobTimers(jobId, timers, activePetType);
+    end
+
+    return timers;
+end
+
+-- ============================================
+-- Background Rendering
+-- ============================================
+
+-- No-op kept for backwards compatibility with callers — immediate-mode rendering means
+-- backgrounds simply aren't drawn when DrawWindow isn't called.
+function data.HideBackground()
+end
+
+-- Resolve pet image settings (returns nil if no image should be shown)
+local function ResolvePetImageSettings()
+    if not data.currentPetName then return nil; end
+
+    local petKey = data.GetPetSettingsKey(data.currentPetName);
+    local petTypeKey = data.GetPetTypeKey();
+
+    if petTypeKey == 'wyvern' then
+        petKey = 'wyvern';
+        local s = gConfig.petBarWyvern or {};
+        if not s.showImage then return nil; end
+        return {
+            petKey = petKey,
+            scale = s.imageScale or 0.4,
+            opacity = s.imageOpacity or 0.3,
+            offsetX = s.imageOffsetX or 0,
+            offsetY = s.imageOffsetY or 0,
+            clipToBackground = s.imageClipToBackground or false,
+        };
+    end
+
+    if not gConfig.petBarShowImage then return nil; end
+    local avatarSettings = gConfig.petBarAvatarSettings and gConfig.petBarAvatarSettings[petKey];
+    if avatarSettings then
+        return {
+            petKey = petKey,
+            scale = avatarSettings.scale or 0.4,
+            opacity = avatarSettings.opacity or 0.3,
+            offsetX = avatarSettings.offsetX or 0,
+            offsetY = avatarSettings.offsetY or 0,
+            clipToBackground = avatarSettings.clipToBackground or false,
+        };
+    end
+    return {
+        petKey = petKey,
+        scale = gConfig.petBarImageScale or 0.4,
+        opacity = gConfig.petBarImageOpacity or 0.3,
+        offsetX = gConfig.petBarImageOffsetX or 0,
+        offsetY = gConfig.petBarImageOffsetY or 0,
+        clipToBackground = false,
+    };
+end
+
+-- Draw background, pet image (middle layer), and borders for the petbar window.
+-- Pet image rendering is interleaved: clipped pet images render between bg and borders;
+-- unclipped pet images render on top of borders (after).
+function data.UpdateBackground(drawList, x, y, width, height, settings)
+    if drawList == nil then return; end
+
+    -- Get per-pet-type settings
+    local petTypeKey = data.GetPetTypeKey();
+    local settingsKey = 'petBar' .. petTypeKey:gsub("^%l", string.upper);
+    local typeSettings = gConfig[settingsKey] or {};
+    local typeColors = gConfig.colorCustomization and gConfig.colorCustomization[settingsKey] or {};
+
+    local bgTheme = typeSettings.backgroundTheme or gConfig.petBarBackgroundTheme or 'Window1';
+    local bgOpacity = typeSettings.backgroundOpacity or gConfig.petBarBackgroundOpacity or 1.0;
+    local borderOpacity = typeSettings.borderOpacity or gConfig.petBarBorderOpacity or 1.0;
+
+    local bgColor = typeColors.bgColor or (gConfig.colorCustomization and gConfig.colorCustomization.petBar and gConfig.colorCustomization.petBar.bgColor) or 0xFFFFFFFF;
+    local borderColor = typeColors.borderColor or (gConfig.colorCustomization and gConfig.colorCustomization.petBar and gConfig.colorCustomization.petBar.borderColor) or 0xFFFFFFFF;
+
+    local bgScale = typeSettings.bgScale or 1.0;
+    local borderScale = typeSettings.borderScale or 1.0;
+
+    local bgOptions = {
+        theme = bgTheme,
+        padding = settings.bgPadding or data.PADDING,
+        paddingY = settings.bgPaddingY or data.PADDING,
+        bgScale = bgScale,
+        borderScale = borderScale,
+        bgOpacity = bgOpacity,
+        bgColor = bgColor,
+        borderSize = settings.borderSize or 21,
+        bgOffset = settings.bgOffset or 1,
+        borderOpacity = borderOpacity,
+        borderColor = borderColor,
+    };
+
+    -- 1. Background (renders first, sits at bottom)
+    windowBg.DrawBackground(drawList, x, y, width, height, bgOptions);
+
+    -- Compute pet image spec (if any)
+    local imageSpec = ResolvePetImageSettings();
+    local petKey = imageSpec and imageSpec.petKey;
+    local meta = petKey and data.petImageMeta[petKey];
+    local texture = petKey and data.petImageTextures[petKey];
+    local canDrawImage = imageSpec and meta and meta.exists and texture and texture.image;
+    local imageTint;
+    local imgX, imgY, imgW, imgH;
+    if canDrawImage then
+        local alphaByte = math.floor(imageSpec.opacity * 255);
+        local argb = bit.bor(bit.lshift(alphaByte, 24), 0x00FFFFFF);
+        imageTint = imgui.GetColorU32(ARGBToImGui(argb));
+        imgX = x + imageSpec.offsetX;
+        imgY = y + imageSpec.offsetY;
+        imgW = meta.baseWidth * imageSpec.scale;
+        imgH = meta.baseHeight * imageSpec.scale;
+    end
+
+    -- 2. Middle-layer pet image (clipped) — renders between bg and borders
+    if canDrawImage and imageSpec.clipToBackground then
+        local clipBounds = windowBg.GetClipBounds(x, y, width, height, {
+            padding = settings.bgPadding or data.PADDING,
+            paddingY = settings.bgPaddingY or data.PADDING,
+        });
+        drawList:PushClipRect(
+            {clipBounds.left, clipBounds.top},
+            {clipBounds.right, clipBounds.bottom},
+            true
+        );
+        drawList:AddImage(
+            tonumber(ffi.cast('uint32_t', texture.image)),
+            {imgX, imgY},
+            {imgX + imgW, imgY + imgH},
+            {0, 0}, {1, 1},
+            imageTint
+        );
+        drawList:PopClipRect();
+    end
+
+    -- 3. Borders (renders on top of bg + middle-layer pet image)
+    windowBg.DrawBorders(drawList, x, y, width, height, bgOptions);
+
+    -- 4. Top-layer pet image (unclipped) — renders on top of borders
+    if canDrawImage and not imageSpec.clipToBackground then
+        drawList:AddImage(
+            tonumber(ffi.cast('uint32_t', texture.image)),
+            {imgX, imgY},
+            {imgX + imgW, imgY + imgH},
+            {0, 0}, {1, 1},
+            imageTint
+        );
+    end
+end
+
+-- ============================================
+-- Preview Mock Data
+-- ============================================
+
+-- Returns mock pet data for preview mode
+-- Returns values that match what DrawWindow expects from real pet data
+function data.GetPreviewPetData(previewType)
+    local mockData = {
+        name = 'Pet',
+        hpPercent = 85,
+        distance = 5.2,
+        mpPercent = 75,
+        tp = 1200,
+        job = nil,
+        showMp = false,
+        isCharmed = false,
+        isJug = false,
+        level = nil,
+        jugTimeRemaining = nil,
+        charmElapsed = nil,
+        petType = nil,
+    };
+
+    if previewType == data.PREVIEW_WYVERN then
+        mockData.name = 'Wyvern';
+        mockData.hpPercent = 85;
+        mockData.distance = 5.2;
+        mockData.mpPercent = 0;
+        mockData.tp = 1200;
+        mockData.job = data.JOB_DRG;
+        mockData.showMp = false;
+        mockData.level = 75;
+        mockData.petType = 'wyvern';
+    elseif previewType == data.PREVIEW_AVATAR then
+        -- Use selected avatar from config, default to first in list (Carbuncle)
+        mockData.name = gConfig.petBarPreviewAvatar or data.avatarList[1];
+        mockData.hpPercent = 100;
+        mockData.distance = 8.5;
+        mockData.mpPercent = 0;
+        mockData.tp = 800;
+        mockData.job = data.JOB_SMN;
+        mockData.showMp = false;  -- Avatars don't use MP in era
+        mockData.level = 75;
+        mockData.petType = 'avatar';
+    elseif previewType == data.PREVIEW_AUTOMATON then
+        mockData.name = 'Automaton';
+        mockData.hpPercent = 90;
+        mockData.distance = 3.1;
+        mockData.mpPercent = 60;
+        mockData.tp = 1500;
+        mockData.job = data.JOB_PUP;
+        mockData.showMp = true;
+        mockData.level = 75;
+        mockData.petType = 'automaton';
+    elseif previewType == data.PREVIEW_JUG then
+        mockData.name = 'FunguarFamiliar';
+        mockData.hpPercent = 70;
+        mockData.distance = 6.8;
+        mockData.mpPercent = 0;
+        mockData.tp = 500;
+        mockData.job = data.JOB_BST;
+        mockData.showMp = false;
+        mockData.isJug = true;
+        mockData.level = 35;  -- FunguarFamiliar max level
+        mockData.jugTimeRemaining = 2732;  -- ~45 minutes remaining
+        mockData.petType = 'jug';
+    elseif previewType == data.PREVIEW_CHARMED then
+        mockData.name = 'Forest Hare';
+        mockData.hpPercent = 45;
+        mockData.distance = 4.5;
+        mockData.mpPercent = 0;
+        mockData.tp = 2000;
+        mockData.job = data.JOB_BST;
+        mockData.showMp = false;
+        mockData.isCharmed = true;
+        mockData.level = 35;
+        mockData.charmElapsed = 183;  -- ~3 minutes elapsed
+        mockData.petType = 'charm';
+    end
+
+    return mockData;
+end
+
+-- ============================================
+-- State Reset
+-- ============================================
+
+function data.Reset()
+    data.petImageTextures = {};
+    data.petImageMeta = {};
+    data.petTargetServerId = nil;
+    data.currentPetName = nil;
+    data.recastMaxTimers = {};
+    -- Pet timer tracking reset
+    data.petSummonTime = nil;
+    data.petExpireTime = nil;
+    data.petType = nil;
+    data.lastTrackedPetName = nil;
+    data.charmStartTime = nil;
+    data.charmExpireTime = nil;
+end
+
+-- ============================================
+-- Charm Calculation Functions
+-- ============================================
+
+function data.GetCharmTimeRemaining()
+    if (data.charmExpireTime == nil) then
+        return nil;
+    end
+    return data.charmExpireTime - os.time();
+end
+
+function data.GetCharmElapsedTime()
+    if (data.charmStartTime == nil) then
+        return 0;
+    end
+    return os.time() - data.charmStartTime;
+end
+
+
+
+function data.getCharmEquipValue()
+    local charmValue = 0;
+
+    for i = 0, 15 do
+        local equippedItem = AshitaCore:GetMemoryManager():GetInventory():GetEquippedItem(i);
+        local index = bit.band(equippedItem.Index, 0x00FF);
+        if index > 0 then
+            local container = bit.rshift(bit.band(equippedItem.Index, 0xFF00), 8);
+            local item = AshitaCore:GetMemoryManager():GetInventory():GetContainerItem(container, index);
+            if (item ~= nil and data.charmGear[item.Id] ~= nil) then
+                charmValue = charmValue + data.charmGear[item.Id];
+            end
+        end
+    end
+
+    return charmValue;
+end
+
+function data.calculateCharmTime(mobLevel)
+    -- Set base values
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    local playerLvl = player:GetMainJobLevel();
+    local baseChr = player:GetStat(6);
+    local bonusChr = (gConfig and gConfig.petBarBonusCharisma) or 0;
+    local modChr = baseChr + bonusChr;
+
+    -- calculate level difference between player & pet
+    local levelDifference = playerLvl - mobLevel;
+    if (levelDifference < -6) then
+        levelDifference = -6;
+    elseif (levelDifference > 9) then
+        levelDifference = 9;
+    end
+
+    -- determine the level modifier
+    local lvlModifier = 0;
+    for _, item in ipairs(data.dLevel) do
+        if item.ld == levelDifference then
+            lvlModifier = item.chg;
+        end
+    end
+
+    -- Base Charm Duration (seconds) = floor(1.25 × Modified CHR + 150)
+    -- Modified Charisma = Base Charisma + Bonus Charisma
+    local baseCharmDuration = math.floor(1.25 * modChr + 150);
+    -- Pre-Gear Charm Duration = Base Charm Duration × % Change
+    local preGearDuration = baseCharmDuration * lvlModifier;
+    -- Charm Duration = Pre-gear Charm Duration × ( 1 + 0.05×(Charm+ in gear) )
+    local charmDuration = preGearDuration * (1 + (0.05 * data.getCharmEquipValue()));
+
+    return os.time() + charmDuration;
+end
+
+function data.ExtendCharmDuration(seconds)
+    if (data.charmExpireTime ~= nil) then
+        data.charmExpireTime = data.charmExpireTime + seconds;
+        -- Persist to config
+        if gConfig then
+            gConfig.petBarCharmExpireTime = data.charmExpireTime;
+        end
+    end
+end
+
+-- ============================================
+-- Pet Status Effects (buffs/debuffs)
+-- ============================================
+
+-- Get active status effects on the pet
+-- Returns: effectIds table, effectTimes table (remaining seconds)
+-- Returns nil, nil if no pet or no active effects
+function data.GetPetStatusEffects()
+    return petBuffHandler.GetActiveEffects();
+end
+
+-- Check if pet has a specific status effect
+function data.PetHasEffect(effectId)
+    return petBuffHandler.HasEffect(effectId);
+end
+
+-- Get remaining time for a specific effect on the pet
+function data.GetPetEffectRemainingTime(effectId)
+    return petBuffHandler.GetEffectRemainingTime(effectId);
+end
+
+return data;

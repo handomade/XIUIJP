@@ -1,0 +1,139 @@
+--[[
+* XIUI Config Menu - Enemy List Settings
+* Contains settings and color settings for Enemy List
+]]--
+
+require('common');
+require('handlers.helpers');
+local components = require('config.components');
+local imgui = require('imgui');
+
+local M = {};
+
+-- Section: Enemy List Settings
+function M.DrawSettings()
+    components.DrawCheckbox('Enabled', 'showEnemyList', CheckVisibility);
+    components.DrawHideWhenMenuOpenOptions('enemyListHideOnMenuFocus', 'enemyListHideMacroPalette');
+    components.DrawCheckbox('Preview Enemies (when config open)', 'enemyListPreview');
+
+    if components.CollapsingSection('Display Options##enemyList') then
+        components.DrawCheckbox('Show Distance', 'showEnemyDistance');
+        components.DrawCheckbox('Show HP% Text', 'showEnemyHPPText');
+        if (not HzLimitedMode) then
+            components.DrawCheckbox('Show Cast Bar', 'showEnemyListCastBar');
+            imgui.ShowHelp('Shows a cast bar under enemies that are casting, with an interrupt flash.');
+        end
+        components.DrawCheckbox('Show Enemy Targets', 'showEnemyListTargets');
+        imgui.ShowHelp('Shows who each enemy is targeting based on their last action.');
+        components.DrawCheckbox('Show Bookends', 'showEnemyListBookends');
+        components.DrawCheckbox('Show Borders', 'showEnemyListBorders');
+        imgui.ShowHelp('Draws a border around each enemy in the list');
+        if gConfig.showEnemyListBorders then
+            imgui.SameLine();
+            components.DrawCheckbox('Use Name Color', 'showEnemyListBordersUseNameColor');
+            imgui.ShowHelp('Use enemy name color as the default border color');
+        end
+
+        if (not HzLimitedMode) then
+            components.DrawCheckbox('Click to Target', 'enableEnemyListClickTarget');
+            imgui.ShowHelp('Click on an enemy entry to target it. Requires /shorthand to be enabled.');
+        end
+    end
+
+    if components.CollapsingSection('Scale & Position##enemyList') then
+        components.DrawSlider('Scale X', 'enemyListScaleX', 0.1, 3.0, '%.1f');
+        components.DrawSlider('Scale Y', 'enemyListScaleY', 0.1, 3.0, '%.1f');
+        components.DrawSlider('Rows Per Column', 'enemyListRowsPerColumn', 1, 20);
+        imgui.ShowHelp('Number of enemies to show per column before starting a new column.');
+        components.DrawSlider('Max Columns', 'enemyListMaxColumns', 1, 5);
+        imgui.ShowHelp('Maximum number of columns to display. Total enemies = Rows x Columns.');
+        components.DrawSlider('Row Spacing', 'enemyListRowSpacing', 0, 20);
+        imgui.ShowHelp('Vertical space between enemy entries.');
+        components.DrawSlider('Column Spacing', 'enemyListColumnSpacing', 0, 50);
+        imgui.ShowHelp('Horizontal space between columns.');
+    end
+
+    if components.CollapsingSection('Text Settings##enemyList') then
+        components.DrawSlider('Name Text Size', 'enemyListNameFontSize', 8, 36);
+        if (gConfig.showEnemyDistance) then
+            components.DrawSlider('Distance Text Size', 'enemyListDistanceFontSize', 8, 36);
+        end
+        if (gConfig.showEnemyHPPText) then
+            components.DrawSlider('HP% Text Size', 'enemyListPercentFontSize', 8, 36);
+        end
+        if (gConfig.showEnemyListTargets) then
+            components.DrawSlider('Target Text Size', 'enemyListTargetFontSize', 8, 36);
+        end
+    end
+
+    if components.CollapsingSection('Debuffs##enemyList') then
+        components.DrawCheckbox('Show Debuffs', 'showEnemyListDebuffs');
+        components.DrawCheckbox('Uncertain Debuff Marker', 'showUncertainDebuffMarker');
+        imgui.ShowHelp('Show a ? on debuffs inferred from a hit (BLU additional effects, Weapon Bash, stun WS).\nThe second resist roll is hidden. Spells that report resist are unmarked.');
+        components.DrawCheckbox('Show Debuff Timers', 'showEnemyListDebuffTimers');
+        if (gConfig.showEnemyListDebuffTimers) then
+            components.DrawCheckbox('CC Status Only', 'enemyListDebuffTimersCCOnly');
+            imgui.ShowHelp('Only time CC effects: Sleep, Lullaby, Stun, Bind, Weight,\nPetrification, Terror, Charm, Silence and Amnesia.');
+        end
+        if (gConfig.showEnemyListDebuffs) then
+            components.DrawLeftRightAnchorDropdown('Debuff Anchor', gConfig, 'enemyListDebuffsAnchor',
+                'Which side of the enemy entry to anchor debuff icons.');
+            components.DrawSlider('Debuff Offset X', 'enemyListDebuffOffsetX', -500, 500);
+            imgui.ShowHelp('Horizontal offset for debuff icons from the anchor edge.');
+            components.DrawSlider('Debuff Offset Y', 'enemyListDebuffOffsetY', -500, 500);
+            imgui.ShowHelp('Vertical offset for debuff icons from top of entry.');
+            components.DrawSlider('Status Effect Icon Size', 'enemyListIconScale', 0.1, 3.0, '%.1f');
+        end
+    end
+
+    if components.CollapsingSection('Background##enemyList') then
+        components.DrawSlider('Entry Background Opacity', 'enemyListBackgroundOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the background behind each enemy entry. Set to 0 to hide.');
+        components.DrawSlider('Target Background Opacity', 'enemyListTargetBackgroundOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the background behind enemy target containers. Set to 0 to hide.');
+    end
+
+    if components.CollapsingSection('Enemy Targets##enemyList', false) then
+        if (gConfig.showEnemyListTargets) then
+            components.DrawSlider('Target Offset X', 'enemyListTargetOffsetX', -500, 500);
+            imgui.ShowHelp('Horizontal offset for enemy target container from the enemy entry.');
+            components.DrawSlider('Target Offset Y', 'enemyListTargetOffsetY', -500, 500);
+            imgui.ShowHelp('Vertical offset for enemy target container.');
+            components.DrawSlider('Target Width', 'enemyListTargetWidth', 50, 200);
+            imgui.ShowHelp('Width of the enemy target container.');
+        else
+            imgui.TextDisabled('Enable "Show Enemy Targets" in Display Options to configure.');
+        end
+    end
+end
+
+-- Section: Enemy List Color Settings
+function M.DrawColorSettings()
+    if components.CollapsingSection('HP Bar Color##enemyListColor') then
+        components.DrawGradientPicker("Enemy HP Bar", gConfig.colorCustomization.enemyList.hpGradient, "Enemy HP bar color");
+        if (not HzLimitedMode) then
+            components.DrawGradientPicker("Enemy Cast Bar", gConfig.colorCustomization.enemyList.castBarGradient, "Enemy cast bar color");
+        end
+    end
+
+    if components.CollapsingSection('Text Colors##enemyListColor') then
+        components.DrawTextColorPicker("Distance Text", gConfig.colorCustomization.enemyList, 'distanceTextColor', "Color of distance text");
+        components.DrawTextColorPicker("HP% Text", gConfig.colorCustomization.enemyList, 'percentTextColor', "Color of HP percentage text");
+        if (not HzLimitedMode) then
+            components.DrawTextColorPicker("Cast Text", gConfig.colorCustomization.enemyList, 'castTextColor', "Color of enemy cast spell name");
+            components.DrawTextColorPicker("Cast Target Text", gConfig.colorCustomization.enemyList, 'castTargetTextColor', "Color of the cast target name");
+        end
+        components.DrawTextColorPicker("Target Name Text", gConfig.colorCustomization.enemyList, 'targetNameTextColor', "Color of enemy's target name");
+        imgui.ShowHelp("Enemy name colors are in the Global section");
+    end
+
+    if components.CollapsingSection('Background Colors##enemyListColor') then
+        components.DrawTextColorPicker("Entry Background", gConfig.colorCustomization.enemyList, 'backgroundColor', "Background color for enemy list entries");
+        components.DrawTextColorPicker("Target Background", gConfig.colorCustomization.enemyList, 'targetBackgroundColor', "Background color for enemy target containers");
+        components.DrawTextColorPicker("Default Border", gConfig.colorCustomization.enemyList, 'borderColor', "Default border color for enemies");
+        components.DrawTextColorPicker("Target Border", gConfig.colorCustomization.enemyList, 'targetBorderColor', "Border color for currently targeted enemy");
+        components.DrawTextColorPicker("Subtarget Border", gConfig.colorCustomization.enemyList, 'subtargetBorderColor', "Border color for subtargeted enemy");
+    end
+end
+
+return M;
