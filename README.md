@@ -9,11 +9,7 @@
 1. ZIP を解凍すると `XIUIJP-main` のようなフォルダになります。中身（`XIUI.lua` と `modules` がある階層）を **`Ashita/addons/XIUI`** に置いてください。フォルダ名を `XIUIJP` のままにしないでください。
 2. 本家 XIUI の上に一部だけ重ねないでください。一度フォルダを退避してから、このフォーク一式で置き換えてください。混ざると `CHARGE_TIMER` が nil で起動に失敗します。
 3. ランチャーが本家 XIUI で上書きしないよう、`cexi_settings.json` の `IgnoreUpdatesAddons` に `XIUI` を入れてください（例: `fancychat,FancyCompass,XIUI,zonename`）。
-4. **`bitreader.lua` をコピーする。** CatsEye の `Ashita/addons/libs` には本家 Ashita の `bitreader.lua` がありません。サッチェル読み込み時に `module 'bitreader' not found` で XIUI 全体が落ちます。次をコピーしてください。
-   - コピー元: `Ashita/addons/easyTH/bitreader.lua`
-   - コピー先: `Ashita/addons/XIUI/bitreader.lua`  
-   `easyTH` が無い場合は、本家 Ashita の `addons/libs/bitreader.lua` でも構いません。
-5. ゲーム内で `/addon reload xiui` するか、クライアントを出し直してください。
+4. ゲーム内で `/addon reload xiui` するか、クライアントを出し直してください。
 
 日本語の設定画面・ホットバーラベルには、ImGui 既定フォントに日本語グリフ（起動プロファイルの Meiryo `is_jp` など）が必要です。チャット本文の日本語とは別です。
 
