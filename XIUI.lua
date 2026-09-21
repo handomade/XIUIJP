@@ -1160,8 +1160,29 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 
         local eventSystemActive = gameState.GetEventSystemActive();
         local menuOpen = gameState.IsMenuOpen();
+        local uiHidden = gameState.ShouldHideUI(gConfig.hideDuringEvents, bLoggedIn);
 
-        if not gameState.ShouldHideUI(gConfig.hideDuringEvents, bLoggedIn) then
+        local function tryPresentDraw(label, fn)
+            local ok, drawErr = pcall(fn);
+            if not ok then
+                LogPresentError(label, drawErr);
+            end
+        end
+
+        local function drawConfigChrome()
+            configMenu.DrawWindow();
+            commandHelp.Draw();
+        end
+
+        -- Config and /xiui help must still draw when the HUD is hidden
+        -- (map, events, autohide, not-yet-logged-in).
+        local chromeVisible = showConfig[1] or commandHelp.IsOpen();
+        local chromeFontPushed = PushChromeFont();
+        if chromeVisible then
+            tryPresentDraw('config', drawConfigChrome);
+        end
+
+        if not uiHidden then
             -- Sync treasure pool from memory (authoritative source of truth)
             -- This ensures we never miss items, even if packets were dropped
             if gConfig.showNotifications then
@@ -1169,26 +1190,6 @@ ashita.events.register('d3d_present', 'present_cb', function ()
                 -- Check pending pool items - creates "Treasure Pool" notification if item
                 -- hasn't been awarded (0x00D3) within 200ms of dropping (0x00D2)
                 notifications.CheckPendingPoolNotifications();
-            end
-
-            local function tryPresentDraw(label, fn)
-                local ok, drawErr = pcall(fn);
-                if not ok then
-                    LogPresentError(label, drawErr);
-                end
-            end
-
-            local function drawConfigChrome()
-                configMenu.DrawWindow();
-                commandHelp.Draw();
-            end
-
-            -- Draw config/help before modules so off-screen module draws cannot
-            -- take down ImGui windows for this frame.
-            local chromeVisible = showConfig[1] or commandHelp.IsOpen();
-            local chromeFontPushed = PushChromeFont();
-            if chromeVisible then
-                tryPresentDraw('config', drawConfigChrome);
             end
 
             tryPresentDraw('module', function()
@@ -1205,10 +1206,13 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 
             tryPresentDraw('config', slotrenderer.FlushTooltip);
             tryPresentDraw('config', statusHandler.FlushTooltip);
-            PopChromeFont(chromeFontPushed);
         else
             uiModules.HideAll();
+            if not chromeVisible then
+                tryPresentDraw('config', drawConfigChrome);
+            end
         end
+        PopChromeFont(chromeFontPushed);
 
         -- XIUI DEV ONLY
         if _XIUI_DEV_HOT_RELOADING_ENABLED then
@@ -1229,29 +1233,33 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 end);
 
 ashita.events.register('load', 'load_cb', function ()
-    profileManager.SyncProfilesWithDisk();
-    gConfig.appliedPositions = {};
-    UpdateUserSettings();
+    local ok, err = pcall(function()
+        profileManager.SyncProfilesWithDisk();
+        gConfig.appliedPositions = {};
+        UpdateUserSettings();
 
-    -- Custom fonts go into ImGui's shared atlas (survives /addon reload).
-    -- Only prewarm here; satchel Initialize adds the active tooltip family sizes.
-    -- Do not also prewarm the full tooltip catalog — reload would re-add dozens of
-    -- fonts each time, freeze the client, and can exhaust the atlas.
-    pcall(function() require('libs.imgui_cjk').bake(); end);
-    imtext.PrewarmFonts(components.available_fonts);
+        -- Custom fonts go into ImGui's shared atlas (survives /addon reload).
+        -- Only prewarm here; satchel Initialize adds the active tooltip family sizes.
+        -- Do not also prewarm the full tooltip catalog — reload would re-add dozens of
+        -- fonts each time, freeze the client, and can exhaust the atlas.
+        pcall(function() require('libs.imgui_cjk').bake(); end);
+        imtext.PrewarmFonts(components.available_fonts);
 
-    uiModules.InitializeAll(gAdjustedSettings);
+        uiModules.InitializeAll(gAdjustedSettings);
 
-    -- Load mob data for current zone
-    local party = AshitaCore:GetMemoryManager():GetParty();
-    if party then
-        local currentZone = party:GetMemberZone(0);
-        if currentZone and currentZone > 0 then
-            mobInfo.data.LoadZone(currentZone);
+        -- Load mob data for current zone
+        local party = AshitaCore:GetMemoryManager():GetParty();
+        if party then
+            local currentZone = party:GetMemberZone(0);
+            if currentZone and currentZone > 0 then
+                mobInfo.data.LoadZone(currentZone);
+            end
         end
-    end
-
+    end);
     bInitialized = true;
+    if not ok then
+        print(chat.header(addon.name):append(chat.error('load error: ' .. tostring(err))));
+    end
 end);
 
 ashita.events.register('unload', 'unload_cb', function ()

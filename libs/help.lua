@@ -59,7 +59,11 @@ end
 
 local function collect()
     local list = {};
-    scan_dir(string.format('%saddons\\XIUI\\', AshitaCore:GetInstallPath()), list);
+    local root = addon.path or '';
+    if root ~= '' and not root:match('[\\/]$') then
+        root = root .. '\\';
+    end
+    scan_dir(root, list);
     table.sort(list, function(a, b)
         local aRecover = isRecoverCommand(a.usage);
         local bRecover = isRecoverCommand(b.usage);
