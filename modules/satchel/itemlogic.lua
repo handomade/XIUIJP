@@ -1,4 +1,14 @@
-local breader = require('bitreader')
+local breader
+do
+    local ok, lib = pcall(require, 'bitreader')
+    if not ok then
+        ok, lib = pcall(require, 'libs.bitreader')
+    end
+    if not ok then
+        error("[XIUI] bitreader.lua is missing. On CatsEyeXI copy Ashita/addons/easyTH/bitreader.lua to Ashita/addons/XIUI/bitreader.lua then /addon reload xiui");
+    end
+    breader = lib
+end
 local imgui = require('imgui')
 local TextureManager = require('libs.texturemanager')
 local tooltips = require('modules.satchel.tooltips')

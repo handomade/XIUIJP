@@ -156,6 +156,72 @@ function M.IsAscii(s)
     return is_ascii(s);
 end
 
+local function first_ascii(...)
+    for i = 1, select('#', ...) do
+        local s = select(i, ...);
+        if type(s) == 'string' and s ~= '' and is_ascii(s) then
+            return s;
+        end
+    end
+    return nil;
+end
+
+-- English DAT / icon / horizonspells keys (Name[3] English, Name[1] default).
+function M.EnglishFromArray(names, stringTable, id)
+    if not names then
+        names = {};
+    end
+    local tableEn = stringTable and (try_get_string(stringTable, id, 2) or try_get_string(stringTable, id, 3)) or nil;
+    return first_ascii(names[3], names[1], names[0], tableEn) or names[1] or '';
+end
+
+function M.EnglishFromSpell(spell)
+    if not spell then return ''; end
+    return M.EnglishFromArray(spell.Name, 'spells.names', spell.Index or spell.Id);
+end
+
+function M.EnglishFromAbility(ability)
+    if not ability then return ''; end
+    return M.EnglishFromArray(ability.Name, 'abilities.names', ability.Id or ability.Index);
+end
+
+function M.EnglishFromItem(item)
+    if not item then return ''; end
+    return M.EnglishFromArray(item.Name, 'items.names', item.Id or item.Index);
+end
+
+-- Icon files and horizonspells are keyed in English. Resolve JP action names.
+function M.EnglishForLookup(kind, name)
+    if type(name) ~= 'string' or name == '' or is_ascii(name) then
+        return name;
+    end
+    local rm = AshitaCore:GetResourceManager();
+    if not rm then
+        return name;
+    end
+    local actiondb = require('modules.hotbar.actiondb');
+    if kind == 'ma' then
+        local id = actiondb.GetSpellId(name);
+        if id then
+            local en = M.EnglishFromSpell(rm:GetSpellById(id));
+            if en ~= '' then return en; end
+        end
+    elseif kind == 'ja' or kind == 'ws' or kind == 'pet' then
+        local id = (kind == 'pet') and actiondb.GetPetAbilityId(name) or actiondb.GetAbilityId(name);
+        if id then
+            local en = M.EnglishFromAbility(rm:GetAbilityById(id));
+            if en ~= '' then return en; end
+        end
+    elseif kind == 'item' or kind == 'equip' then
+        local id = actiondb.GetItemId(name);
+        if id then
+            local en = M.EnglishFromItem(rm:GetItemById(id));
+            if en ~= '' then return en; end
+        end
+    end
+    return name;
+end
+
 -- If a saved bind still has the English DAT name, swap in Japanese when present.
 function M.PreferJapanese(kind, name)
     if type(name) ~= 'string' or name == '' or not is_ascii(name) then

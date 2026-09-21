@@ -1041,8 +1041,11 @@ function M.DrawSlot(params)
     -- ========================================
     if params.showLabel and params.labelText and params.labelText ~= '' and animOpacity > 0.5 and drawList then
         local labelSrc = params.labelText;
-        if bind and resnames.IsAscii(labelSrc) then
-            labelSrc = resnames.PreferJapanese(bind.actionType, bind.action or labelSrc);
+        -- ASCII spell names can be localized; macro labels must stay as-is.
+        -- PreferJapanese(action) would replace an English macro title with the
+        -- first line of macroText (stored on bind.action).
+        if bind and bind.actionType ~= 'macro' and resnames.IsAscii(labelSrc) then
+            labelSrc = resnames.PreferJapanese(bind.actionType, labelSrc);
         end
         labelSrc = resnames.ToUtf8(labelSrc);
         local lblFontSize = params.labelFontSize or 10;
@@ -1428,8 +1431,8 @@ function M.DrawTooltip(bind)
 
     local lines = {};
     local rawName = bind.displayName or bind.action or 'Unknown';
-    if resnames.IsAscii(rawName) then
-        rawName = resnames.PreferJapanese(bind.actionType, bind.action or rawName);
+    if bind.actionType ~= 'macro' and resnames.IsAscii(rawName) then
+        rawName = resnames.PreferJapanese(bind.actionType, rawName);
     end
     local displayName = resnames.ToUtf8(rawName);
     lines[#lines+1] = { displayName, TOOLTIP_COL_GOLD, 0 };

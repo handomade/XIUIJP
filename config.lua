@@ -954,7 +954,7 @@ config.DrawWindow = function(us)
 
         -- GitHub button
         RenderSocialButton(githubTexture, "github_btn", function()
-            ashita.misc.open_url("https://github.com/tirem/xiui");
+            ashita.misc.open_url("https://github.com/handomade/XIUIJP");
         end, bgLight, bgLighter, borderDark, boxSize, iconSize);
 
         imgui.SameLine(0, boxSpacing);

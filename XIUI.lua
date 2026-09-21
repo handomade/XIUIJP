@@ -25,8 +25,8 @@
 addon.name      = 'XIUI';
 addon.author    = 'Team XIUI, Hando';
 addon.version   = '1.8.4h';
-addon.desc      = 'Multiple UI elements with manager (JP overlay)';
-addon.link      = 'https://github.com/tirem/XIUI'
+addon.desc      = 'FFXI用UI一式の日本語化フォーク。設定画面・コマンド説明の日本語、日本語クライアント向けマクロ名、ホットバー／クロスバーの日本語ラベルに対応。';
+addon.link      = 'https://github.com/handomade/XIUIJP'
 
 -- Ashita version targeting (for ImGui compatibility)
 -- Set to nil for auto-detection, true to force 4.3 mode, and false for 4.16 mode
