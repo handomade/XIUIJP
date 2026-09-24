@@ -846,6 +846,7 @@ config.DrawWindow = function(us)
     imgui.SetNextWindowSizeConstraints({ 400, 300 }, { sw, sh });
     -- On open: set ideal size for the current resolution and reset position if off-screen.
     if configJustOpened then
+        imgui.SetNextWindowFocus();
         if not configHasBeenOpened then
             imgui.SetNextWindowSize({ maxW, maxH }, ImGuiCond_Always);
             configHasBeenOpened = true;

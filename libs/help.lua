@@ -24,6 +24,7 @@ local COLOR_DESC = { 0.62, 0.64, 0.68, 1.0 };
 
 local isOpen = { false };
 local commands = {};
+local focusOnOpen = false;
 
 local POSITION_KEY = 'XIUI_Commands';
 local WINDOW_ID    = 'XIUI Commands##xiuiHelp';
@@ -90,6 +91,7 @@ function M.Toggle()
     isOpen[1] = not isOpen[1];
     if isOpen[1] then
         commands = collect();
+        focusOnOpen = true;
     end
 end
 
@@ -106,6 +108,10 @@ function M.Draw()
     });
 
     components.PushWindowStyle();
+    if focusOnOpen then
+        imgui.SetNextWindowFocus();
+        focusOnOpen = false;
+    end
     if imgui.Begin(WINDOW_ID, isOpen, ImGuiWindowFlags_None) then
         persistedWindow.FinishOpen(POSITION_KEY, shouldApply);
         imgui.TextDisabled(string.format(i18n.T('%d commands'), #commands));

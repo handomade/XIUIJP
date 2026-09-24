@@ -11,11 +11,11 @@ local windowBg = require('libs.windowbackground');
 local drawing = require('libs.drawing');
 
 local data = require('modules.hotbar.data');
-local recast = require('modules.hotbar.recast');
 local actions = require('modules.hotbar.actions');
 local textures = require('modules.hotbar.textures');
 local macropalette = require('modules.hotbar.macropalette');
 local dragdrop = require('libs.dragdrop');
+local recast = require('modules.hotbar.recast');
 local slotrenderer = require('modules.hotbar.slotrenderer');
 local hotbarConfig = require('config.hotbar');
 local petpalette = require('modules.hotbar.petpalette');

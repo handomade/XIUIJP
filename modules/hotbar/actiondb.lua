@@ -62,6 +62,7 @@ local function index_spell(map, spell, id)
     end
 end
 
+-- Build spell name lookup table
 local function BuildSpellLookup()
     if M.spellNameToId then return; end
 
@@ -115,6 +116,7 @@ local function BuildAbilityLookup()
         local ability = resourceMgr:GetAbilityById(id);
         if ability and ability.Name and ability.Name[1] then
             local name = ability.Name[1]:lower();
+            -- JA/WS path: keep the lowest id (same rationale as spells).
             if not M.abilityNameToId[name] then
                 M.abilityNameToId[name] = id;
             end
@@ -174,8 +176,10 @@ local function BuildItemLookup()
     for id = 1, 65535 do
         local item = resourceMgr:GetItemById(id);
         if item and item.Name and item.Name[1] then
-            local name = item.Name[1]:lower();
-            M.itemNameToId[name] = id;
+            index_name(M.itemNameToId, item.Name[1], id);
+            for i = 1, 3 do
+                index_name(M.itemNameToId, item.Name[i], id);
+            end
         end
     end
 end
@@ -184,7 +188,7 @@ end
 function M.GetItemId(itemName)
     if not itemName then return nil; end
     BuildItemLookup();
-    return M.itemNameToId[itemName:lower()];
+    return lookup(M.itemNameToId, itemName);
 end
 
 -- Clear caches (call on zone if needed)

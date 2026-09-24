@@ -1174,14 +1174,9 @@ ashita.events.register('d3d_present', 'present_cb', function ()
             commandHelp.Draw();
         end
 
-        -- Config and /xiui help must still draw when the HUD is hidden
-        -- (map, events, autohide, not-yet-logged-in).
-        local chromeVisible = showConfig[1] or commandHelp.IsOpen();
+        -- Config/help still draw when the HUD is hidden (map, events, autohide).
+        -- HUD first, then chrome, so dummy HUD windows cannot sit in front.
         local chromeFontPushed = PushChromeFont();
-        if chromeVisible then
-            tryPresentDraw('config', drawConfigChrome);
-        end
-
         if not uiHidden then
             -- Sync treasure pool from memory (authoritative source of truth)
             -- This ensures we never miss items, even if packets were dropped
@@ -1199,18 +1194,15 @@ ashita.events.register('d3d_present', 'present_cb', function ()
                     end
                 end);
             end);
-
-            if not chromeVisible then
-                tryPresentDraw('config', drawConfigChrome);
-            end
-
-            tryPresentDraw('config', slotrenderer.FlushTooltip);
-            tryPresentDraw('config', statusHandler.FlushTooltip);
         else
             uiModules.HideAll();
-            if not chromeVisible then
-                tryPresentDraw('config', drawConfigChrome);
-            end
+        end
+
+        tryPresentDraw('config', drawConfigChrome);
+
+        if not uiHidden then
+            tryPresentDraw('config', slotrenderer.FlushTooltip);
+            tryPresentDraw('config', statusHandler.FlushTooltip);
         end
         PopChromeFont(chromeFontPushed);
 

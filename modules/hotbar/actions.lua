@@ -11,13 +11,10 @@ local textures = require('modules.hotbar.textures');
 local actiondb = require('modules.hotbar.actiondb');
 local playerdata = require('modules.hotbar.playerdata');
 local recast = require('modules.hotbar.recast');
--- Same-tree recast.lua exports this. A mixed install (new actions.lua + old
--- recast.lua from official XIUI) used to crash at load with CHARGE_TIMER nil.
-local CHARGE_TIMER = recast.CHARGE_TIMER or {
-    READY = 102,
-    QUICK_DRAW = 195,
-    STRATAGEM = 231,
-};
+-- CatsEye mixed trees used to crash at load with CHARGE_TIMER nil.
+if recast.CHARGE_TIMER == nil then
+    recast.CHARGE_TIMER = { READY = 102, QUICK_DRAW = 195, STRATAGEM = 231 };
+end
 local resnames = require('libs.resnames');
 local TextureManager = require('libs.texturemanager');
 local macrosLib = require('libs.ffxi.macros');
@@ -551,9 +548,9 @@ local function BuildCostDescriptor(actionType, actionName)
         if not ability then return NO_COST; end
 
         local timerId = ability.RecastTimerId or ability.TimerId;
-        if timerId == CHARGE_TIMER.STRATAGEM
-            or timerId == CHARGE_TIMER.READY
-            or timerId == CHARGE_TIMER.QUICK_DRAW then
+        if timerId == recast.CHARGE_TIMER.STRATAGEM
+            or timerId == recast.CHARGE_TIMER.READY
+            or timerId == recast.CHARGE_TIMER.QUICK_DRAW then
             return { kind = 'charges', timerId = timerId };
         end
 
@@ -591,16 +588,16 @@ local function GetCostDescriptor(actionType, actionName)
 end
 
 local CHARGE_READERS = {
-    [CHARGE_TIMER.STRATAGEM] = recast.GetStratagemCharges,
-    [CHARGE_TIMER.READY] = recast.GetReadyCharges,
-    [CHARGE_TIMER.QUICK_DRAW] = recast.GetQuickDrawCharges,
+    [recast.CHARGE_TIMER.STRATAGEM] = recast.GetStratagemCharges,
+    [recast.CHARGE_TIMER.READY] = recast.GetReadyCharges,
+    [recast.CHARGE_TIMER.QUICK_DRAW] = recast.GetQuickDrawCharges,
 };
 
 -- Per-kind readers, each returning kind, label, met. Keyed by descriptor kind,
 -- so 'none' simply has no entry.
 local COST_READERS = {
     charges = function(desc, buffs)
-        if desc.timerId == CHARGE_TIMER.STRATAGEM and buffs.tabulaRasa then
+        if desc.timerId == recast.CHARGE_TIMER.STRATAGEM and buffs.tabulaRasa then
             return 'charges', '0', true;
         end
         local charges = CHARGE_READERS[desc.timerId]() or 0;
@@ -1085,13 +1082,7 @@ function M.GetBindIcon(bind)
         end
         -- Magic spell - look up in horizonspells database
         local spell = GetSpellByName(actionName);
-        if not spell then
-            local spellId = actiondb.GetSpellId(bind.action) or actiondb.GetSpellId(actionName);
-            if spellId then
-                iconId = spellId;
-                icon = textures:Get('spells' .. string.format('%05d', spellId));
-            end
-        else
+        if spell then
             iconId = spell.id;
             icon = textures:Get('spells' .. string.format('%05d', spell.id));
         end
@@ -1116,7 +1107,7 @@ function M.GetBindIcon(bind)
         end
         -- Fall back to the native game ability icon (abilities/<id>.png), keyed by the
         -- ability's resource Id, so any JA without a curated icon still shows real art.
-        local abilityId = actiondb.GetAbilityId(actionName) or actiondb.GetAbilityId(bind.action);
+        local abilityId = actiondb.GetAbilityId(actionName);
         if abilityId then
             icon = textures:Get('abilities' .. string.format('%05d', abilityId));
             if icon then return icon, abilityId; end
@@ -1130,11 +1121,6 @@ function M.GetBindIcon(bind)
             if icon then
                 return icon, iconId;
             end
-        end
-        local petAbilityId = actiondb.GetPetAbilityId(actionName) or actiondb.GetPetAbilityId(bind.action);
-        if petAbilityId then
-            icon = textures:Get('abilities' .. string.format('%05d', petAbilityId));
-            if icon then return icon, petAbilityId; end
         end
     elseif bind.actionType == 'ws' then
         -- No icon source for weaponskills; abbreviation fallback handles display.
