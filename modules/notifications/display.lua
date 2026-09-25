@@ -14,6 +14,7 @@ local TextureManager = require('libs.texturemanager');
 local windowBg = require('libs.windowbackground');
 local defaultPositions = require('libs.defaultpositions');
 local imtext = require('libs.imtext');
+local i18n = require('libs.i18n');
 
 local M = {};
 
@@ -122,22 +123,22 @@ local function getNotificationTitle(notification)
     local nType = notification.type;
 
     if nType == notificationData.NOTIFICATION_TYPE.PARTY_INVITE then
-        return 'Party Invite';
+        return i18n.T('Party Invite');
     elseif nType == notificationData.NOTIFICATION_TYPE.TRADE_INVITE then
-        return 'Trade Invite';
+        return i18n.T('Trade Invite');
     elseif nType == notificationData.NOTIFICATION_TYPE.TREASURE_POOL then
-        return 'Treasure Pool';
+        return i18n.T('Treasure Pool');
     elseif nType == notificationData.NOTIFICATION_TYPE.TREASURE_LOT then
-        return 'Lot Cast';
+        return i18n.T('Lot Cast');
     elseif nType == notificationData.NOTIFICATION_TYPE.ITEM_OBTAINED then
-        return 'Item Obtained';
+        return i18n.T('Item Obtained');
     elseif nType == notificationData.NOTIFICATION_TYPE.KEY_ITEM_OBTAINED then
-        return 'Key Item Obtained';
+        return i18n.T('Key Item Obtained');
     elseif nType == notificationData.NOTIFICATION_TYPE.GIL_OBTAINED then
-        return 'Gil Obtained';
+        return i18n.T('Gil Obtained');
     end
 
-    return 'Notification';
+    return i18n.T('Notification');
 end
 
 -- Get notification subtitle text
@@ -146,25 +147,25 @@ local function getNotificationSubtitle(notification)
     local data = notification.data;
 
     if nType == notificationData.NOTIFICATION_TYPE.PARTY_INVITE then
-        return data.playerName or 'Unknown Player';
+        return data.playerName or i18n.T('Unknown Player');
     elseif nType == notificationData.NOTIFICATION_TYPE.TRADE_INVITE then
-        return data.playerName or 'Unknown Player';
+        return data.playerName or i18n.T('Unknown Player');
     elseif nType == notificationData.NOTIFICATION_TYPE.TREASURE_POOL then
-        return data.itemName or 'Unknown Item';
+        return data.itemName or i18n.T('Unknown Item');
     elseif nType == notificationData.NOTIFICATION_TYPE.TREASURE_LOT then
-        return data.itemName or 'Unknown Item';
+        return data.itemName or i18n.T('Unknown Item');
     elseif nType == notificationData.NOTIFICATION_TYPE.ITEM_OBTAINED then
-        local itemName = data.itemName or 'Unknown Item';
+        local itemName = data.itemName or i18n.T('Unknown Item');
         local quantity = data.quantity or 1;
         if quantity > 1 then
             return string.format('%s x%d', itemName, quantity);
         end
         return itemName;
     elseif nType == notificationData.NOTIFICATION_TYPE.KEY_ITEM_OBTAINED then
-        return data.itemName or 'Unknown Key Item';
+        return data.itemName or i18n.T('Unknown Key Item');
     elseif nType == notificationData.NOTIFICATION_TYPE.GIL_OBTAINED then
         local amount = data.amount or 0;
-        return FormatInt(amount) .. ' Gil';
+        return FormatInt(amount) .. ' ' .. i18n.T('Gil');
     end
 
     return '';
@@ -815,8 +816,8 @@ end
 local function drawSplitWindow(splitKey, settings)
     local windowName = 'Notifications_' .. splitKey;
     local notifications = getNotificationsForSplitKey(splitKey);
-    local title = SPLIT_WINDOW_TITLES[splitKey] or splitKey;
-    local placeholder = SPLIT_WINDOW_PLACEHOLDERS[splitKey] or 'Drag to reposition';
+    local title = i18n.T(SPLIT_WINDOW_TITLES[splitKey] or splitKey);
+    local placeholder = i18n.T(SPLIT_WINDOW_PLACEHOLDERS[splitKey] or 'Drag to reposition');
 
     -- Pass splitKey for split windows (uses dedicated primitives)
     drawNotificationWindow(windowName, notifications, settings, splitKey, title, placeholder);
@@ -1272,8 +1273,8 @@ local function drawGroupWindow(groupNum, settings)
                     local titleFs = groupSettings.titleFontSize or 14;
                     local subtitleFs = groupSettings.subtitleFontSize or 12;
                     local placeholderMaxTextWidth = math.max(1, notificationWidth - 2 * contentPadding);
-                    local title = GROUP_TITLES[groupNum] or ('Group ' .. groupNum);
-                    local subtitle = GROUP_PLACEHOLDERS[groupNum] or 'Drag to reposition';
+                    local title = i18n.T(GROUP_TITLES[groupNum] or ('Group ' .. groupNum));
+                    local subtitle = i18n.T(GROUP_PLACEHOLDERS[groupNum] or 'Drag to reposition');
                     local placeholderKey = 'group' .. groupNum .. '_placeholder';
                     local displayTitle = GetTruncatedText(title, placeholderMaxTextWidth, titleFs, placeholderKey .. '_title');
                     local displaySubtitle = GetTruncatedText(subtitle, placeholderMaxTextWidth, subtitleFs, placeholderKey .. '_subtitle');

@@ -26,6 +26,7 @@ local progressbar = require('libs.progressbar');
 local button = require('libs.button');
 local TextureManager = require('libs.texturemanager');
 local imtext = require('libs.imtext');
+local i18n = require('libs.i18n');
 local data = require('modules.treasurepool.data');
 local actions = require('modules.treasurepool.actions');
 local defaultPositions = require('libs.defaultpositions');
@@ -729,7 +730,7 @@ function M.DrawWindow(settings)
                     local itemStatus = data.GetPlayerLotStatus(slot);
                     local hasValidationIssue = (not itemCanLot and itemStatus ~= 'lotted' and itemStatus ~= 'passed');
 
-                    local displayName = item.itemName or 'Unknown';
+                    local displayName = item.itemName or i18n.T('Unknown Item');
                     if hasValidationIssue then
                     -- Add warning indicator to name if validation fails
                         displayName = '[!] ' .. displayName;
@@ -1092,7 +1093,7 @@ function M.DrawWindow(settings)
                         local textX = iconX + historyIconSize + iconTextGap;
                         local textY = rowY + 2;
 
-                        imtext.Draw(uiDrawList, histItem.itemName or 'Unknown', textX, textY,
+                        imtext.Draw(uiDrawList, histItem.itemName or i18n.T('Unknown Item'), textX, textY,
                             GetLootColor(histItem.itemId), fontSize);
 
                         -- Draw winner info (right-aligned, with scrollbar accommodation)

@@ -152,6 +152,12 @@ function M.FromItem(item)
     return M.FromArray(item.Name, 'items.names', id);
 end
 
+function M.FromKeyItem(keyItem)
+    if not keyItem then return '', ''; end
+    local id = keyItem.Id or keyItem.Index;
+    return M.FromArray(keyItem.Name, 'keyitems.names', id);
+end
+
 function M.IsAscii(s)
     return is_ascii(s);
 end

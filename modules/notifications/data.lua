@@ -4,6 +4,8 @@
 ]]--
 
 require('common');
+local resnames = require('libs.resnames');
+local i18n = require('libs.i18n');
 
 local M = {};
 
@@ -240,10 +242,65 @@ local function GetMaxActiveNotifications()
     return math.min(total, M.MAX_ACTIVE_NOTIFICATIONS);
 end
 
+local function getItemName(itemId)
+    if itemId == nil or itemId == 0 or itemId == -1 or itemId == 65535 then
+        return i18n.T('Unknown Item');
+    end
+    local item = AshitaCore:GetResourceManager():GetItemById(itemId);
+    if item then
+        local _, display = resnames.FromItem(item);
+        if display ~= nil and display ~= '' then
+            return display;
+        end
+    end
+    return i18n.T('Unknown Item');
+end
+
+local function getKeyItemName(keyItemId)
+    if keyItemId == nil or keyItemId == 0 or keyItemId == -1 or keyItemId == 65535 then
+        return i18n.T('Unknown Key Item');
+    end
+    local _, display = resnames.FromArray(nil, 'keyitems.names', keyItemId);
+    if display ~= nil and display ~= '' then
+        return display;
+    end
+    local keyItem = AshitaCore:GetResourceManager():GetKeyItemById(keyItemId);
+    if keyItem then
+        _, display = resnames.FromKeyItem(keyItem);
+        if display ~= nil and display ~= '' then
+            return display;
+        end
+    end
+    return i18n.T('Unknown Key Item');
+end
+
+local function localizeNotificationData(notificationType, data)
+    if data == nil then
+        return {};
+    end
+    if notificationType == M.NOTIFICATION_TYPE.ITEM_OBTAINED
+        or notificationType == M.NOTIFICATION_TYPE.TREASURE_POOL
+        or notificationType == M.NOTIFICATION_TYPE.TREASURE_LOT then
+        if data.itemId ~= nil then
+            data.itemName = getItemName(data.itemId);
+        elseif data.itemName == nil or data.itemName == '' or data.itemName == 'Unknown Item' then
+            data.itemName = i18n.T('Unknown Item');
+        end
+    elseif notificationType == M.NOTIFICATION_TYPE.KEY_ITEM_OBTAINED then
+        if data.itemId ~= nil then
+            data.itemName = getKeyItemName(data.itemId);
+        elseif data.itemName == nil or data.itemName == '' or data.itemName == 'Unknown Key Item' then
+            data.itemName = i18n.T('Unknown Key Item');
+        end
+    end
+    return data;
+end
+
 -- Create a new notification object
 local function CreateNotification(notificationType, data)
     local currentTime = os.clock();
     local duration = M.GetDurationForType(notificationType, M.settings);
+    data = localizeNotificationData(notificationType, data);
 
     return {
         id = M.nextId,
@@ -257,7 +314,7 @@ local function CreateNotification(notificationType, data)
         containerOffsetX = -50,  -- Container slides in from left
         iconOffsetX = -20,       -- Icon slides in from left (relative to container)
         textOffsetY = 8,         -- Text slides up from below
-        data = data or {},
+        data = data,
     };
 end
 
@@ -635,40 +692,6 @@ end
 -- ============================================
 -- Convenience Functions for Handlers
 -- ============================================
-
--- Helper to get item name from resource manager
--- Note: Invalid item IDs include nil, 0, -1, and 65535 (0xFFFF)
-local function getItemName(itemId)
-    -- Check for invalid item IDs (matches equipmon pattern)
-    if itemId == nil or itemId == 0 or itemId == -1 or itemId == 65535 then
-        return 'Unknown Item';
-    end
-    local item = AshitaCore:GetResourceManager():GetItemById(itemId);
-    if item and item.Name and item.Name[1] then
-        local name = item.Name[1];
-        -- Sometimes the name can be empty string
-        if name ~= nil and name ~= '' then
-            return name;
-        end
-    end
-    return 'Unknown Item';
-end
-
--- Helper to get key item name
--- Note: Similar validation to items
-local function getKeyItemName(keyItemId)
-    if keyItemId == nil or keyItemId == 0 or keyItemId == -1 or keyItemId == 65535 then
-        return 'Unknown Key Item';
-    end
-    local keyItem = AshitaCore:GetResourceManager():GetKeyItemById(keyItemId);
-    if keyItem and keyItem.Name and keyItem.Name[1] then
-        local name = keyItem.Name[1];
-        if name ~= nil and name ~= '' then
-            return name;
-        end
-    end
-    return 'Unknown Key Item';
-end
 
 -- Add party invite notification
 function M.AddPartyInviteNotification(playerName, playerId)

@@ -5,6 +5,8 @@
 ]]--
 
 require('common');
+local resnames = require('libs.resnames');
+local i18n = require('libs.i18n');
 
 local M = {};
 
@@ -63,16 +65,16 @@ M.previewWonHistory = {};
 -- Get item name from resource manager
 local function getItemName(itemId)
     if itemId == nil or itemId == 0 or itemId == -1 or itemId == 65535 then
-        return 'Unknown Item';
+        return i18n.T('Unknown Item');
     end
     local item = AshitaCore:GetResourceManager():GetItemById(itemId);
-    if item and item.Name and item.Name[1] then
-        local name = item.Name[1];
-        if name ~= nil and name ~= '' then
-            return name;
+    if item then
+        local _, display = resnames.FromItem(item);
+        if display ~= nil and display ~= '' then
+            return display;
         end
     end
-    return 'Unknown Item';
+    return i18n.T('Unknown Item');
 end
 
 -- Mark sorted cache as needing rebuild
@@ -343,7 +345,7 @@ local function generateMockWonHistory()
     for i, item in ipairs(PREVIEW_WON_HISTORY) do
         history[i] = {
             itemId = item.itemId,
-            itemName = item.name,
+            itemName = getItemName(item.itemId),
             winnerName = item.winner,
             winnerLot = item.lot,
             wonAt = now - (i * 60),  -- Stagger times (1 minute apart)
@@ -440,7 +442,7 @@ local function ensurePreviewItems()
         M.previewItems[slot] = {
             slot = slot,
             itemId = item.itemId,
-            itemName = item.name,
+            itemName = getItemName(item.itemId),
             count = 1,
             expiresAt = now + (300 - ((i - 1) * 25)),  -- Stagger expiration times (25s apart)
             dropTime = 0,
@@ -1018,13 +1020,13 @@ function M.ValidateLotItem(slot)
 
     -- Check if inventory is full
     if M.IsInventoryFull() then
-        return false, 'Inventory is full';
+        return false, i18n.T('Inventory is full');
     end
 
     -- Check if item is Rare and player already has one
     if M.IsItemRare(itemId) and M.PlayerHasItemInInventory(itemId) then
-        local itemName = item.itemName or 'this item';
-        return false, 'Already have ' .. itemName .. ' (Rare)';
+        local itemName = item.itemName or i18n.T('this item');
+        return false, string.format(i18n.T('Already have %s (Rare)'), itemName);
     end
 
     return true, nil;
