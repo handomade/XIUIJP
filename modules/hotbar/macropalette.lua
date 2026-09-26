@@ -1202,8 +1202,18 @@ end
 -- equipSlotFilter: if provided, only show items that can be equipped in this slot (e.g., 'main', 'head')
 -- refreshType: when set, invalidates cached data when the dropdown is opened
 -- emptyMessage: text shown when the list is empty after loading
+local function ComboUiName(item)
+    if type(item) ~= 'table' then
+        return resnames.ToUtf8(item or '');
+    end
+    if item.display ~= nil and item.display ~= '' then
+        return item.display;
+    end
+    return resnames.ToUtf8(item.name or '');
+end
+
 local function DrawSearchableCombo(label, getItems, currentValue, onSelect, showIcons, equipSlotFilter, refreshType, emptyMessage)
-    local displayText = currentValue ~= '' and currentValue or 'Select...';
+    local displayText = currentValue ~= '' and resnames.ToUtf8(currentValue) or 'Select...';
 
     -- Get the slot mask for filtering if provided
     local slotMask = equipSlotFilter and EQUIP_SLOT_MASKS[equipSlotFilter] or nil;
@@ -1275,6 +1285,7 @@ local function DrawSearchableCombo(label, getItems, currentValue, onSelect, show
 
             for _, item in ipairs(items) do
                 local itemName = item.name or '';
+                local itemUiName = ComboUiName(item);
 
                 -- Check if item passes equipment slot filter
                 local passesSlotFilter = true;
@@ -1282,7 +1293,9 @@ local function DrawSearchableCombo(label, getItems, currentValue, onSelect, show
                     passesSlotFilter = bit.band(item.slots, slotMask) ~= 0;
                 end
 
-                if passesSlotFilter and (filter == '' or itemName:lower():find(filter, 1, true)) then
+                if passesSlotFilter and (filter == ''
+                    or itemUiName:lower():find(filter, 1, true)
+                    or itemName:lower():find(filter, 1, true)) then
                     matchCount = matchCount + 1;
                     local isSelected = currentValue == itemName;
 
@@ -1310,7 +1323,7 @@ local function DrawSearchableCombo(label, getItems, currentValue, onSelect, show
                         end
                     end
 
-                    local itemLabel = item.level and string.format('[%d] %s', item.level, itemName) or itemName;
+                    local itemLabel = item.level and string.format('[%d] %s', item.level, itemUiName) or itemUiName;
                     -- Add quantity for items with count > 1
                     if item.count and item.count > 1 then
                         itemLabel = itemLabel .. ' x' .. item.count;
@@ -3724,7 +3737,7 @@ function M.DrawMacroEditor()
     editorFields.actionType[1] = FindIndex(ACTION_TYPES, editingMacro.actionType or 'ma');
     editorFields.action[1] = editingMacro.action or '';
     editorFields.target[1] = FindIndex(TARGET_OPTIONS, editingMacro.target or 't');
-    editorFields.displayName[1] = editingMacro.displayName or '';
+    editorFields.displayName[1] = resnames.ToUtf8(editingMacro.displayName or '');
     editorFields.equipSlot[1] = FindIndex(EQUIP_SLOTS, editingMacro.equipSlot or 'main');
     editorFields.macroText[1] = editingMacro.macroText or '';
     editorFields.recastSourceType[1] = FindIndex(RECAST_SOURCE_TYPES, editingMacro.recastSourceType or 'none');
@@ -3815,8 +3828,9 @@ function M.DrawMacroEditor()
                 editingMacro.action = spell.name;
                 editorFields.action[1] = spell.name;
                 if (editingMacro.displayName or '') == '' then
-                    editingMacro.displayName = spell.name;
-                    editorFields.displayName[1] = spell.name;
+                    local uiName = ComboUiName(spell);
+                    editingMacro.displayName = uiName;
+                    editorFields.displayName[1] = uiName;
                 end
             end, false, nil, 'spells', 'No spells available for this job');
 
@@ -3846,8 +3860,9 @@ function M.DrawMacroEditor()
                 editingMacro.action = ability.name;
                 editorFields.action[1] = ability.name;
                 if (editingMacro.displayName or '') == '' then
-                    editingMacro.displayName = ability.name;
-                    editorFields.displayName[1] = ability.name;
+                    local uiName = ComboUiName(ability);
+                    editingMacro.displayName = uiName;
+                    editorFields.displayName[1] = uiName;
                 end
             end, false, nil, 'abilities', 'No abilities available');
 
@@ -3877,8 +3892,9 @@ function M.DrawMacroEditor()
                 editingMacro.action = ws.name;
                 editorFields.action[1] = ws.name;
                 if (editingMacro.displayName or '') == '' then
-                    editingMacro.displayName = ws.name;
-                    editorFields.displayName[1] = ws.name;
+                    local uiName = ComboUiName(ws);
+                    editingMacro.displayName = uiName;
+                    editorFields.displayName[1] = uiName;
                 end
             end, false, nil, 'weaponskills', 'No weaponskills available');
 
@@ -3905,11 +3921,12 @@ function M.DrawMacroEditor()
             -- Item: Searchable dropdown or manual input
             DrawItemLabelWithQuantity('Item', editingMacro.itemId, editingMacro.action);
             DrawSearchableCombo('##itemCombo', GetCachedItems, editingMacro.action or '', function(item)
+                local uiName = ComboUiName(item);
                 editingMacro.action = item.name;
                 editingMacro.itemId = item.id;  -- Store item ID for fast icon lookup
                 editorFields.action[1] = item.name;
-                editingMacro.displayName = item.name;
-                editorFields.displayName[1] = item.name;
+                editingMacro.displayName = uiName;
+                editorFields.displayName[1] = uiName;
             end, true, nil, 'items', 'No items found in storage');
 
             -- Manual input fallback
@@ -3969,11 +3986,12 @@ function M.DrawMacroEditor()
             local selectedSlot = EQUIP_SLOTS[editorFields.equipSlot[1]];
             DrawItemLabelWithQuantity('Item (' .. EQUIP_SLOT_LABELS[selectedSlot] .. ')', editingMacro.itemId, editingMacro.action);
             DrawSearchableCombo('##equipItemCombo', GetCachedItems, editingMacro.action or '', function(item)
+                local uiName = ComboUiName(item);
                 editingMacro.action = item.name;
                 editingMacro.itemId = item.id;  -- Store item ID for fast icon lookup
                 editorFields.action[1] = item.name;
-                editingMacro.displayName = item.name;
-                editorFields.displayName[1] = item.name;
+                editingMacro.displayName = uiName;
+                editorFields.displayName[1] = uiName;
             end, true, selectedSlot, 'items', 'No items found in storage');
 
             -- Manual input fallback
@@ -4111,8 +4129,9 @@ function M.DrawMacroEditor()
                 editingMacro.action = cmd.name;
                 editorFields.action[1] = cmd.name;
                 if (editingMacro.displayName or '') == '' then
-                    editingMacro.displayName = cmd.name;
-                    editorFields.displayName[1] = cmd.name;
+                    local uiName = ComboUiName(cmd);
+                    editingMacro.displayName = uiName;
+                    editorFields.displayName[1] = uiName;
                 end
             end, false, nil, 'pet', 'No pet commands available (need a pet / known abilities)');
 
