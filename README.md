@@ -17,7 +17,7 @@
 
 VanaCore では、CatsEye 用のフォルダコピーとは別に、日本語表示用のセットアップを配しています。アドオン本体ではありません。すでに入っている XIUIJP と FancyChatJP の上へ、必要なファイルだけ重ねます。
 
-ダウンロード: [VanaCore日本語セットアップ.zip](https://github.com/handomade/XIUIJP/releases/download/1.8.4i/VanaCore日本語セットアップ.zip)（[Releases](https://github.com/handomade/XIUIJP/releases) にも同じファイルがあります）
+ダウンロード: [VanaCore.zip](https://github.com/handomade/XIUIJP/releases/download/1.8.4i/VanaCore.zip)（[Releases](https://github.com/handomade/XIUIJP/releases)）。解凍すると `VanaCore日本語セットアップ` フォルダになります。
 
 1. VanaCore と Ashita を終了する
 2. zip を解凍し、そのフォルダを **Ashita フォルダと Vanacore フォルダが並んでいる場所**に置く
