@@ -24,7 +24,7 @@
 
 addon.name      = 'XIUI';
 addon.author    = 'Team XIUI, Hando';
-addon.version   = '1.8.4h';
+addon.version   = '1.8.4i';
 addon.desc      = 'FFXI用UI一式の日本語化フォーク。設定画面・コマンド説明の日本語、日本語クライアント向けマクロ名、ホットバー／クロスバーの日本語ラベルに対応。';
 addon.link      = 'https://github.com/handomade/XIUIJP'
 
@@ -1096,6 +1096,18 @@ do
     CHROME_FONT_OVERRIDE = ok and style ~= nil and type(style.FontSizeBase) == 'number';
 end
 local function PushChromeFont()
+    local cjk = require('libs.imgui_cjk');
+    cjk.ensure();
+    local face = cjk.font();
+    if face then
+        local ok = pcall(function()
+            imguiLib.PushFont(face, XIUI_CHROME_FONT_SIZE);
+        end);
+        if not ok then
+            ok = pcall(function() imguiLib.PushFont(face); end);
+        end
+        if ok then return true; end
+    end
     if not CHROME_FONT_OVERRIDE then return false; end
     imguiLib.PushFont(imguiLib.GetFont(), XIUI_CHROME_FONT_SIZE);
     return true;

@@ -8,12 +8,11 @@
 local imgui = require('imgui');
 
 local M = {
-    font = nil,
+    face = nil,
     size = 18,
     depth = 0,
     merged = false,
-    usable = false,
-    verified = false,
+    tries = 0,
 };
 
 local RANGE_TABLE = {
@@ -128,21 +127,15 @@ function M.has_cjk()
     return M.merged or current_has_cjk();
 end
 
+-- Separate CJK face.  Nil when Japanese is already on the default font.
 function M.font()
-    if M.merged then
-        return imgui.GetFont();
-    end
-    return M.font;
-end
-
-function M.size()
-    return M.size;
+    return M.face;
 end
 
 function M.bake()
     if current_has_cjk() then
         M.merged = true;
-        M.font = nil;
+        M.face = nil;
         return true;
     end
     if M.merged then
@@ -158,16 +151,38 @@ function M.bake()
         if type(s) == 'number' and s >= 12 then size = s; end
     end);
     M.size = size;
-    local added = try_add(path, size, M.ranges(), true);
+    -- Own face, not MergeMode. Hotbar labels draw this font at a small
+    -- size; a merged face shares Agave's atlas and those glyphs come out wrong.
+    local added = try_add(path, size, M.ranges(), false);
     if added then
-        M.font = added;
+        -- ImGui 1.92 rasterises the new face on use.  A same-frame
+        -- width probe still sees '?' and must not drop the face.
         if current_has_cjk() then
             M.merged = true;
-            M.font = nil;
+            M.face = nil;
+        else
+            M.face = added;
         end
         return true;
     end
     return false;
+end
+
+-- load may run before ImGui will accept a font.  present retries once.
+-- A face we already loaded stays: HUD text asks for it by handle.
+function M.ensure()
+    if M.face then
+        return;
+    end
+    if M.merged or current_has_cjk() then
+        M.merged = true;
+        return;
+    end
+    if M.tries >= 2 then
+        return;
+    end
+    M.tries = M.tries + 1;
+    M.bake();
 end
 
 function M.merge(size)
@@ -175,19 +190,17 @@ function M.merge(size)
 end
 
 function M.push()
-    if M.merged or current_has_cjk() then
-        M.merged = true;
-        M.font = nil;
-        return false;
-    end
-    if not M.font then
+    if not M.face then
+        if M.merged or current_has_cjk() then
+            M.merged = true;
+        end
         return false;
     end
     local ok = pcall(function()
-        imgui.PushFont(M.font, M.size);
+        imgui.PushFont(M.face, M.size);
     end);
     if not ok then
-        ok = pcall(function() imgui.PushFont(M.font); end);
+        ok = pcall(function() imgui.PushFont(M.face); end);
     end
     if ok then
         M.depth = M.depth + 1;

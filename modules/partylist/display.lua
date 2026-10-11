@@ -194,6 +194,14 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     -- Draw selection box
     if memInfo.targeted then
         local drawList = textDrawList;
+        -- The spell name is its own window. A highlight on the foreground
+        -- list would cover that name, so keep the highlight with the frame.
+        if imtext.UsesWidgetText() then
+            local ok, windowList = pcall(imgui.GetWindowDrawList);
+            if ok and windowList then
+                drawList = windowList;
+            end
+        end
 
         local selectionWidth = allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2;
         local selectionScaleY = cache.selectionBoxScaleY or 1;
@@ -617,14 +625,23 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 end
                 local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + textOffsets.nameY + (nameRefHeight - castBarHeight) / 2 + castBarOffsetY;
                 local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
+                local castBarOptions = {
+                    decorate = false,
+                    absolutePosition = {castBarX, castBarY},
+                    borderColorOverride = data.getBarBorderOverride(partyIndex)
+                };
+                -- Keep this bar behind the spell-name window. HP/MP bars stay
+                -- on the foreground list, unchanged.
+                if imtext.UsesWidgetText() then
+                    local ok, windowList = pcall(imgui.GetWindowDrawList);
+                    if ok and windowList then
+                        castBarOptions.drawList = windowList;
+                    end
+                end
                 progressbar.ProgressBar(
                     {{castProgress, castGradient}},
                     {castBarWidth, castBarHeight},
-                    {
-                        decorate = false,
-                        absolutePosition = {castBarX, castBarY},
-                        borderColorOverride = data.getBarBorderOverride(partyIndex)
-                    }
+                    castBarOptions
                 );
             end
         end
@@ -1194,7 +1211,27 @@ function display.DrawPartyWindow(settings, party, partyIndex)
         local cachedW = data.fullMenuWidth[partyIndex];
         local cachedH = data.fullMenuHeight[partyIndex];
         if cachedW and cachedH and cachedW > 0 and cachedH > 0 then
-            windowBg.Draw(GetUIDrawList(), imguiPosX, imguiPosY, cachedW, cachedH, {
+            -- VanaCore draws this frame on the foreground list, which sits
+            -- above every window and hides Japanese names. Keep the frame on
+            -- this window only in that case. Bars and the cast bar stay on
+            -- the foreground list, same as before.
+            local bgList = GetUIDrawList();
+            local openedBgClip = false;
+            if imtext.UsesWidgetText() then
+                local ok, windowList = pcall(imgui.GetWindowDrawList);
+                if ok and windowList then
+                    bgList = windowList;
+                    local pad = (settings.borderSize or 21) + (settings.bgPadding or 8) + 24;
+                    openedBgClip = pcall(function()
+                        bgList:PushClipRect(
+                            {imguiPosX - pad, imguiPosY - pad},
+                            {imguiPosX + cachedW + pad, imguiPosY + cachedH + pad},
+                            false
+                        );
+                    end);
+                end
+            end
+            windowBg.Draw(bgList, imguiPosX, imguiPosY, cachedW, cachedH, {
                 theme = cache.backgroundName,
                 padding = settings.bgPadding,
                 paddingY = settings.bgPaddingY,
@@ -1207,6 +1244,9 @@ function display.DrawPartyWindow(settings, party, partyIndex)
                 borderOpacity = cache.borderOpacity,
                 borderColor = cache.colors.borderColor,
             });
+            if openedBgClip then
+                pcall(function() bgList:PopClipRect(); end);
+            end
         end
 
         local nameRefHeight = cache.fontSizes.name;

@@ -64,22 +64,59 @@ local function GetActionLabelMaxWidth(slotSize, slotSpacing)
     return slotSize + evenExtra;
 end
 
+-- Byte index just past each UTF-8 character, so a cut never splits a glyph
+-- into the '?' ImGui shows for a broken sequence.
+local function utf8_ends(text)
+    local ends = {};
+    local i, n = 1, #text;
+    while i <= n do
+        local c = text:byte(i);
+        local len = 1;
+        if c >= 0xF0 then
+            len = 4;
+        elseif c >= 0xE0 then
+            len = 3;
+        elseif c >= 0xC0 then
+            len = 2;
+        end
+        if i + len - 1 > n then break; end
+        i = i + len;
+        ends[#ends + 1] = i - 1;
+    end
+    return ends;
+end
+
 -- Truncate text to fit maxWidth (no ellipsis).
 local function TruncateLabelToWidth(text, fontSize, maxWidth)
     if not text or text == '' then return ''; end
     local w = imtext.Measure(text, fontSize);
     if w <= maxWidth then return text; end
-    local lo, hi = 0, #text;
+    local ends = utf8_ends(text);
+    -- Four kana at the label size land a few pixels over a 48px slot, so
+    -- the old cut turned サンダー into サンダ. Keep one overflowing glyph.
+    -- CatsEye (interface 4.16) keeps the original cut.
+    local ver = 0;
+    pcall(function()
+        ver = AshitaCore:GetPluginManager():Get('addons'):GetInterfaceVersion() or 0;
+    end);
+    if ver >= 4.3 and #ends >= 1 then
+        local prev = (#ends >= 2) and ends[#ends - 1] or 0;
+        local charW = imtext.Measure(text:sub(prev + 1, ends[#ends]), fontSize);
+        if charW > 0 and w <= maxWidth + charW then
+            return text;
+        end
+    end
+    local lo, hi = 0, #ends;
     while lo < hi do
         local mid = math.floor((lo + hi + 1) / 2);
-        if imtext.Measure(text:sub(1, mid), fontSize) <= maxWidth then
+        if imtext.Measure(text:sub(1, ends[mid]), fontSize) <= maxWidth then
             lo = mid;
         else
             hi = mid - 1;
         end
     end
     if lo <= 0 then return ''; end
-    return text:sub(1, lo);
+    return text:sub(1, ends[lo]);
 end
 
 -- Wrap at whole words into at most 2 lines; oversize words are cut (no ellipsis / no remainder carry).
@@ -1503,9 +1540,90 @@ function M.BeginFrame(fontSettings)
     pendingLabelCount = 0;
 end
 
+local function argb_to_imvec(argb)
+    argb = argb or 0xFFFFFFFF;
+    return {
+        bit.band(bit.rshift(argb, 16), 0xFF) / 255,
+        bit.band(bit.rshift(argb, 8), 0xFF) / 255,
+        bit.band(argb, 0xFF) / 255,
+        bit.band(bit.rshift(argb, 24), 0xFF) / 255,
+    };
+end
+
+-- VanaCore's draw-list AddText decodes Shift-JIS and turns kanji (and some
+-- kana) into '?'. Widget text does not, which is why the settings window
+-- is already fine. CatsEye stays on the draw list.
+local function labels_use_widgets()
+    local ver = 0;
+    pcall(function()
+        ver = AshitaCore:GetPluginManager():Get('addons'):GetInterfaceVersion() or 0;
+    end);
+    return ver >= 4.3;
+end
+
+local function draw_label_widgets()
+    local dw, dh = 3840, 2160;
+    pcall(function()
+        local disp = imgui.GetIO().DisplaySize;
+        if disp and disp.x and disp.x > 0 then
+            dw, dh = disp.x, disp.y;
+        end
+    end);
+    local flags = bit.bor(
+        ImGuiWindowFlags_NoDecoration,
+        ImGuiWindowFlags_NoInputs,
+        ImGuiWindowFlags_NoBackground,
+        ImGuiWindowFlags_NoSavedSettings,
+        ImGuiWindowFlags_NoFocusOnAppearing,
+        ImGuiWindowFlags_NoBringToFrontOnFocus,
+        ImGuiWindowFlags_NoNav
+    );
+    imgui.SetNextWindowPos({0, 0}, ImGuiCond_Always);
+    imgui.SetNextWindowSize({dw, dh}, ImGuiCond_Always);
+    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
+    local cjk = require('libs.imgui_cjk');
+    local face = cjk.font();
+    local opened = imgui.Begin('##XIUI_HotbarLabels', true, flags);
+    if opened then
+        for i = 1, pendingLabelCount do
+            local entry = pendingLabels[i];
+            local text = resnames.ToUtf8(entry.text);
+            local pushed = false;
+            if face and entry.fontSize then
+                -- imtext.Measure adds 2px. Draw at that same size so the
+                -- centered width matches the glyphs.
+                pushed = pcall(function()
+                    imgui.PushFont(face, entry.fontSize + 2);
+                end);
+            end
+            local col = argb_to_imvec(entry.color);
+            imgui.PushStyleColor(ImGuiCol_Text, {0, 0, 0, col[4]});
+            imgui.SetCursorScreenPos({entry.x + 1, entry.y + 1});
+            imgui.TextUnformatted(text);
+            imgui.PopStyleColor();
+            imgui.PushStyleColor(ImGuiCol_Text, col);
+            imgui.SetCursorScreenPos({entry.x, entry.y});
+            imgui.TextUnformatted(text);
+            imgui.PopStyleColor();
+            if pushed then imgui.PopFont(); end
+            entry.drawList = nil;
+            entry.text = nil;
+        end
+    end
+    imgui.End();
+    imgui.PopStyleVar();
+end
+
 -- Draw queued action names after all bars so they sit on top of overlapping slots.
 function M.FlushLabels()
     if pendingLabelCount == 0 then return; end
+    if labels_use_widgets() then
+        local ok = pcall(draw_label_widgets);
+        if ok then
+            pendingLabelCount = 0;
+            return;
+        end
+    end
     for i = 1, pendingLabelCount do
         local entry = pendingLabels[i];
         imtext.Draw(entry.drawList, resnames.ToUtf8(entry.text), entry.x, entry.y, entry.color, entry.fontSize);

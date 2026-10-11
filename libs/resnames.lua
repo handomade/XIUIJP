@@ -62,6 +62,37 @@ function M.ToUtf8(s)
     return s;
 end
 
+-- VanaCore's ImDrawList::AddText still decodes Shift-JIS, even when
+-- ashita.interface=4.30 leaves widget text (settings) as UTF-8.
+-- CatsEye's Ashita is interface 4.16 and already draws UTF-8 here.
+local draw_wants_sjis = nil;
+
+local function imgui_draw_wants_sjis()
+    if draw_wants_sjis ~= nil then
+        return draw_wants_sjis;
+    end
+    local ver = 0;
+    pcall(function()
+        ver = AshitaCore:GetPluginManager():Get('addons'):GetInterfaceVersion() or 0;
+    end);
+    draw_wants_sjis = ver >= 4.3;
+    return draw_wants_sjis;
+end
+
+function M.ForDrawList(s)
+    local utf = M.ToUtf8(s);
+    if not imgui_draw_wants_sjis() or is_ascii(utf) then
+        return utf;
+    end
+    local ok, converted = pcall(function()
+        return encoding:UTF8_To_ShiftJIS(utf, true);
+    end);
+    if ok and type(converted) == 'string' and converted ~= '' then
+        return converted;
+    end
+    return utf;
+end
+
 -- Chat manager wants Shift-JIS for Japanese FFXI commands.
 function M.ForCommand(s)
     if type(s) ~= 'string' or s == '' or is_ascii(s) then

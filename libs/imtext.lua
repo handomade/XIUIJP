@@ -14,6 +14,8 @@
 require('common');
 local imgui = require('imgui');
 local imguiCjk = require('libs.imgui_cjk');
+local resnames = require('libs.resnames');
+local bit = require('bit');
 
 local M = {};
 
@@ -128,13 +130,10 @@ local function argbToU32(argb)
     return cached;
 end
 
--- Tahoma/Arial have no CJK. Japanese UI lives on Ashita's default ImGui font.
+-- Tahoma/Arial have no CJK.  Use the Meiryo face when the default
+-- ImGui font does not already contain Japanese glyphs.
 local function font_for_text(text)
     if type(text) == 'string' and text:find('[\128-\255]') then
-        local def = imgui.GetFont();
-        if def then
-            return def;
-        end
         local cjk = imguiCjk.font();
         if cjk then
             return cjk;
@@ -208,12 +207,138 @@ function M.Reset()
     colorCache = {};
 end
 
+-- ImGui 1.92 mis-draws AddText(font, size, ...) for a face loaded at another
+-- size: Latin survives, Japanese comes out as the wrong glyphs. PushFont
+-- is the path the settings window already uses successfully.
+local function push_sized(font, fontSize)
+    if not font or not fontSize then
+        return false;
+    end
+    local ok = pcall(function() imgui.PushFont(font, fontSize); end);
+    if not ok then
+        ok = pcall(function() imgui.PushFont(font); end);
+    end
+    return ok;
+end
+
+local widget_utf8 = nil;
+
+local function use_widget_text()
+    if widget_utf8 ~= nil then
+        return widget_utf8;
+    end
+    local ver = 0;
+    pcall(function()
+        ver = AshitaCore:GetPluginManager():Get('addons'):GetInterfaceVersion() or 0;
+    end);
+    widget_utf8 = ver >= 4.3;
+    return widget_utf8;
+end
+
+function M.UsesWidgetText()
+    return use_widget_text();
+end
+
+local function argb_vec(argb)
+    argb = argb or 0xFFFFFFFF;
+    return {
+        bit.band(bit.rshift(argb, 16), 0xFF) / 255,
+        bit.band(bit.rshift(argb, 8), 0xFF) / 255,
+        bit.band(argb, 0xFF) / 255,
+        bit.band(bit.rshift(argb, 24), 0xFF) / 255,
+    };
+end
+
+-- VanaCore's draw-list text reinterprets Japanese. Widget text keeps the
+-- real characters, but it must not be added to the party window: that
+-- window auto-sizes, so the list jumps while someone is casting.
+-- A separate window leaves the party layout alone and stays in front of
+-- the frame. CatsEye stays on the draw list below.
+local function try_widget(text, x, y, argbColor, fontSize, outlined)
+    if not use_widget_text() or not text:find('[\128-\255]') then
+        return false;
+    end
+    local utf = resnames.ToUtf8(text);
+    if fontSize then fontSize = fontSize + SIZE_OFFSET; end
+    local font = font_for_text(utf);
+    local dw, dh = 3840, 2160;
+    pcall(function()
+        local disp = imgui.GetIO().DisplaySize;
+        if disp and disp.x and disp.x > 0 then
+            dw, dh = disp.x, disp.y;
+        end
+    end);
+    local flags = bit.bor(
+        ImGuiWindowFlags_NoDecoration,
+        ImGuiWindowFlags_NoInputs,
+        ImGuiWindowFlags_NoBackground,
+        ImGuiWindowFlags_NoSavedSettings,
+        ImGuiWindowFlags_NoFocusOnAppearing,
+        ImGuiWindowFlags_NoNav
+    );
+    imgui.SetNextWindowPos({0, 0}, ImGuiCond_Always);
+    imgui.SetNextWindowSize({dw, dh}, ImGuiCond_Always);
+    imgui.SetNextWindowFocus();
+    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
+    local beginOk, opened = pcall(function()
+        return imgui.Begin('##XIUI_CjkText', true, flags);
+    end);
+    if not beginOk then
+        pcall(function() imgui.PopStyleVar(); end);
+        return false;
+    end
+    local paintOk = false;
+    if opened then
+        local pushed = push_sized(font, fontSize);
+        imgui.PushStyleVar(ImGuiStyleVar_Alpha, 1);
+        local col = argb_vec(argbColor);
+        local function paint(px, py, c)
+            imgui.PushStyleColor(ImGuiCol_Text, c);
+            imgui.SetCursorScreenPos({px, py});
+            imgui.TextUnformatted(utf);
+            imgui.PopStyleColor();
+        end
+        paintOk = pcall(function()
+            if outlined and outlineWidth > 0 then
+                local a = col[4];
+                local ow = outlineWidth;
+                paint(x - ow, y, {0, 0, 0, a});
+                paint(x + ow, y, {0, 0, 0, a});
+                paint(x, y - ow, {0, 0, 0, a});
+                paint(x, y + ow, {0, 0, 0, a});
+            end
+            paint(x, y, col);
+        end);
+        pcall(function() imgui.PopStyleVar(); end);
+        if pushed then imgui.PopFont(); end
+    end
+    pcall(imgui.End);
+    pcall(function() imgui.PopStyleVar(); end);
+    return paintOk;
+end
+
+local function draw_text(drawList, font, fontSize, x, y, col, text, pushed)
+    pos[1] = x;
+    pos[2] = y;
+    if pushed then
+        drawList:AddText(pos, col, text);
+    elseif font and fontSize then
+        drawList:AddText(font, fontSize, pos, col, text);
+    else
+        drawList:AddText(pos, col, text);
+    end
+end
+
 --- Measure text width and height at the given font size.
 --- @param text string
 --- @param fontSize number|nil Pixel size (nil uses ImGui default)
 --- @return number width, number height
 function M.Measure(text, fontSize)
     if not text or text == '' then return 0, 0; end
+    -- Width is taken through CalcTextSize, which keeps UTF-8 (same as the
+    -- settings widgets). ForDrawList is only for AddText, which still
+    -- decodes Shift-JIS and would make this width the garbled one.
+    text = resnames.ToUtf8(text);
     if fontSize then fontSize = fontSize + SIZE_OFFSET; end
 
     local font = font_for_text(text);
@@ -246,38 +371,22 @@ end
 --- @param fontSize number|nil Pixel size (nil uses ImGui default)
 function M.Draw(drawList, text, x, y, argbColor, fontSize)
     if not drawList or not text or text == '' then return; end
+    if try_widget(text, x, y, argbColor, fontSize, true) then return; end
+    text = resnames.ForDrawList(text);
     if fontSize then fontSize = fontSize + SIZE_OFFSET; end
     local font = font_for_text(text);
     local col = argbToU32(argbColor);
     local ow = outlineWidth;
+    local pushed = push_sized(font, fontSize);
     if ow > 0 then
         local outlineCol = getOutlineCol();
-        if fontSize and font then
-            pos[1] = x - ow; pos[2] = y;
-            drawList:AddText(font, fontSize, pos, outlineCol, text);
-            pos[1] = x + ow;
-            drawList:AddText(font, fontSize, pos, outlineCol, text);
-            pos[1] = x; pos[2] = y - ow;
-            drawList:AddText(font, fontSize, pos, outlineCol, text);
-            pos[2] = y + ow;
-            drawList:AddText(font, fontSize, pos, outlineCol, text);
-        else
-            pos[1] = x - ow; pos[2] = y;
-            drawList:AddText(pos, outlineCol, text);
-            pos[1] = x + ow;
-            drawList:AddText(pos, outlineCol, text);
-            pos[1] = x; pos[2] = y - ow;
-            drawList:AddText(pos, outlineCol, text);
-            pos[2] = y + ow;
-            drawList:AddText(pos, outlineCol, text);
-        end
+        draw_text(drawList, font, fontSize, x - ow, y, outlineCol, text, pushed);
+        draw_text(drawList, font, fontSize, x + ow, y, outlineCol, text, pushed);
+        draw_text(drawList, font, fontSize, x, y - ow, outlineCol, text, pushed);
+        draw_text(drawList, font, fontSize, x, y + ow, outlineCol, text, pushed);
     end
-    pos[1] = x; pos[2] = y;
-    if fontSize and font then
-        drawList:AddText(font, fontSize, pos, col, text);
-    else
-        drawList:AddText(pos, col, text);
-    end
+    draw_text(drawList, font, fontSize, x, y, col, text, pushed);
+    if pushed then imgui.PopFont(); end
 end
 
 --- Draw text without outline.
@@ -289,15 +398,14 @@ end
 --- @param fontSize number|nil
 function M.DrawSimple(drawList, text, x, y, argbColor, fontSize)
     if not drawList or not text or text == '' then return; end
+    if try_widget(text, x, y, argbColor, fontSize, false) then return; end
+    text = resnames.ForDrawList(text);
     if fontSize then fontSize = fontSize + SIZE_OFFSET; end
     local font = font_for_text(text);
     local col = argbToU32(argbColor);
-    pos[1] = x; pos[2] = y;
-    if fontSize and font then
-        drawList:AddText(font, fontSize, pos, col, text);
-    else
-        drawList:AddText(pos, col, text);
-    end
+    local pushed = push_sized(font, fontSize);
+    draw_text(drawList, font, fontSize, x, y, col, text, pushed);
+    if pushed then imgui.PopFont(); end
 end
 
 --- Draw text with a single drop-shadow (2 AddText calls vs Draw's 5).
@@ -307,25 +415,18 @@ end
 --- bright backgrounds is close to a full outline at a fraction of the cost.
 function M.DrawShadow(drawList, text, x, y, argbColor, fontSize)
     if not drawList or not text or text == '' then return; end
+    if try_widget(text, x, y, argbColor, fontSize, true) then return; end
+    text = resnames.ForDrawList(text);
     if fontSize then fontSize = fontSize + SIZE_OFFSET; end
     local font = font_for_text(text);
     local col = argbToU32(argbColor);
     local ow = outlineWidth;
+    local pushed = push_sized(font, fontSize);
     if ow > 0 then
-        local shadowCol = getOutlineCol();
-        pos[1] = x + ow; pos[2] = y + ow;
-        if fontSize and font then
-            drawList:AddText(font, fontSize, pos, shadowCol, text);
-        else
-            drawList:AddText(pos, shadowCol, text);
-        end
+        draw_text(drawList, font, fontSize, x + ow, y + ow, getOutlineCol(), text, pushed);
     end
-    pos[1] = x; pos[2] = y;
-    if fontSize and font then
-        drawList:AddText(font, fontSize, pos, col, text);
-    else
-        drawList:AddText(pos, col, text);
-    end
+    draw_text(drawList, font, fontSize, x, y, col, text, pushed);
+    if pushed then imgui.PopFont(); end
 end
 
 return M;
