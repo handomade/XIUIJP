@@ -13,6 +13,26 @@
 
 日本語の設定画面・ホットバーラベルには、ImGui 既定フォントに日本語グリフ（起動プロファイルの Meiryo `is_jp` など）が必要です。チャット本文の日本語とは別です。
 
+## 導入（VanaCore）
+
+VanaCore では、CatsEye 用のフォルダコピーとは別に、日本語表示用のセットアップを配しています。アドオン本体ではありません。すでに入っている XIUIJP と FancyChatJP の上へ、必要なファイルだけ重ねます。
+
+ダウンロード: [VanaCore日本語セットアップ.zip](https://github.com/handomade/XIUIJP/releases/download/1.8.4i/VanaCore日本語セットアップ.zip)（[Releases](https://github.com/handomade/XIUIJP/releases) にも同じファイルがあります）
+
+1. VanaCore と Ashita を終了する
+2. zip を解凍し、そのフォルダを **Ashita フォルダと Vanacore フォルダが並んでいる場所**に置く
+3. `適用.bat` を実行する
+
+行うことは次のとおりです。
+
+- `Vanacore\vanacore.ini` に `ashita.interface=4.30` を書く
+- その人の Ashita の `imgui.ini` から、FancyChat のウィンドウ位置を VanaCore 側へ写す
+- XIUI と FancyChat の VanaCore 向けファイルを、Ashita と VanaCore の両方のアドオンフォルダへ入れる
+- PC に Meiryo があり VanaCore 側に無いときだけ、`resources\fonts\meiryo.ttc` へコピーする
+- 戦闘ログの魔法アイコン用 `gameicons.ttf` を、VanaCore が読む場所へコピーする
+
+変える前のファイルは、そのフォルダの `backup` に残ります。終わったら VanaCore を起動し直してください。`1.8.4i` は、VanaCore（Ashita interface 4.3）で通知・詠唱名・ホットバーの日本語を ImGui の文字として描きます。CatsEye（4.16）の描画は変えていません。CatsEyeXI ではこの bat は使いません。
+
 ## 本家から追加・改変した点
 
 - 設定画面とコマンド説明の日本語オーバーレイ（`locale/ja.lua`）。本家の英語ソースは残し、表示だけ差し替えます
