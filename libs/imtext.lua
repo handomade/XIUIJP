@@ -254,6 +254,28 @@ end
 -- window auto-sizes, so the list jumps while someone is casting.
 -- A separate window leaves the party layout alone and stays in front of
 -- the frame. CatsEye stays on the draw list below.
+-- Focusing this overlay calls FocusWindow(), which clears the active
+-- item and closes popups. A settings button (and the title-bar X) arms
+-- on mouse-down and fires on release, so a focus steal on the next
+-- frame swallows the click. Only take focus when nothing is mid-click.
+local function overlay_may_focus()
+    if showConfig and showConfig[1] then
+        return false;
+    end
+    local blocked = false;
+    pcall(function()
+        if imgui.IsMouseDown(0) or imgui.IsMouseReleased(0) then
+            blocked = true;
+        elseif imgui.IsAnyItemActive and imgui.IsAnyItemActive() then
+            blocked = true;
+        elseif imgui.IsPopupOpen and ImGuiPopupFlags_AnyPopup
+            and imgui.IsPopupOpen('', ImGuiPopupFlags_AnyPopup) then
+            blocked = true;
+        end
+    end);
+    return not blocked;
+end
+
 local function try_widget(text, x, y, argbColor, fontSize, outlined)
     if not use_widget_text() or not text:find('[\128-\255]') then
         return false;
@@ -278,7 +300,9 @@ local function try_widget(text, x, y, argbColor, fontSize, outlined)
     );
     imgui.SetNextWindowPos({0, 0}, ImGuiCond_Always);
     imgui.SetNextWindowSize({dw, dh}, ImGuiCond_Always);
-    imgui.SetNextWindowFocus();
+    if overlay_may_focus() then
+        imgui.SetNextWindowFocus();
+    end
     imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
     local beginOk, opened = pcall(function()
         return imgui.Begin('##XIUI_CjkText', true, flags);

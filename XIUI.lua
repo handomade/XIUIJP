@@ -24,7 +24,7 @@
 
 addon.name      = 'XIUI';
 addon.author    = 'Team XIUI, Hando';
-addon.version   = '1.8.4i';
+addon.version   = '1.8.4j';
 addon.desc      = 'FFXI用UI一式の日本語化フォーク。設定画面・コマンド説明の日本語、日本語クライアント向けマクロ名、ホットバー／クロスバーの日本語ラベルに対応。';
 addon.link      = 'https://github.com/handomade/XIUIJP'
 
